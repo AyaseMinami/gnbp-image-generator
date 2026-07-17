@@ -54,9 +54,9 @@ internal class OkHttpProviderHttpTransport(
         val tracker = DeliveryTracker()
         val request = try {
             call.toOkHttpRequest(tracker)
-        } catch (error: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             return@withContext ProviderHttpResult.Failure(
-                TransportFailure.InvalidRequest(error.message ?: "Invalid transport request"),
+                TransportFailure.InvalidRequest("Invalid transport request"),
             )
         }
         val client = try {

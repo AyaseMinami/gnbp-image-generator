@@ -81,6 +81,35 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `invalid sensitive request values return a fixed sanitized failure`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val sentinel = "sentinel-secret\n"
+            val invalidCall = call(cleartextBinding(server), listOf("v1", "generate")).copy(
+                headers = listOf(
+                    HttpHeader(
+                        name = "Authorization",
+                        value = SensitiveValue(sentinel),
+                        isSensitive = true,
+                    ),
+                ),
+            )
+
+            val result = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+                .execute(invalidCall)
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.InvalidRequest("Invalid transport request"),
+                ),
+                result,
+            )
+            assertFalse(result.toString().contains("sentinel-secret"))
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
     fun `unsupported acknowledgement policy revision is rejected before DNS`() = runTest {
         var dnsUsed = false
         val endpoint = ProviderEndpoint.parse("http://relay.invalid/base/")
@@ -363,6 +392,43 @@ class OkHttpProviderHttpTransportTest {
                 strictResult is ProviderHttpResult.Failure && strictResult.error is TransportFailure.Tls,
             )
             assertEquals(DeliveryCertainty.NotSent, (strictResult as ProviderHttpResult.Failure).error.certainty)
+        }
+    }
+
+    @Test
+    fun `custom CA for one host does not trust a strict second host`() = runTest {
+        tlsServer().use { customFixture ->
+            tlsServer().use { strictFixture ->
+                customFixture.server.enqueue(MockResponse().setBody("custom trusted"))
+                val transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+                val customBinding = TransportBinding(
+                    profileId = ProfileId("custom-first-host-profile"),
+                    endpoint = ProviderEndpoint.parse(customFixture.server.url("/base/").toString()),
+                    securityMode = TransportSecurityMode.CustomCaTls(
+                        certificates = listOf(customFixture.ca.certificate.encoded),
+                    ),
+                )
+                val strictBinding = TransportBinding(
+                    profileId = ProfileId("strict-second-host-profile"),
+                    endpoint = ProviderEndpoint.parse(strictFixture.server.url("/base/").toString()),
+                )
+
+                val customResult = transport.execute(call(customBinding, listOf("v1", "generate")))
+                val strictResult = transport.execute(call(strictBinding, listOf("v1", "generate")))
+
+                assertEquals(
+                    ProviderHttpResult.Response(200, "custom trusted".encodeToByteArray()),
+                    customResult,
+                )
+                assertTrue(
+                    "result=$strictResult",
+                    strictResult is ProviderHttpResult.Failure && strictResult.error is TransportFailure.Tls,
+                )
+                assertEquals(
+                    DeliveryCertainty.NotSent,
+                    (strictResult as ProviderHttpResult.Failure).error.certainty,
+                )
+            }
         }
     }
 
