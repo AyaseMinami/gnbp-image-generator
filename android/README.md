@@ -12,8 +12,8 @@ image-generation release.
 - Gradle 9.4.1 through the checked-in Wrapper
 - Jetpack Compose BOM 2026.06.00
 
-The application ID is `io.github.ayaseminami.gnbp`, `minSdk` is 26, and the
-current Android version is `0.1.0` (`versionCode` 1).
+The application ID is `io.github.ayaseminami.gnbp` and `minSdk` is 26. Android
+`versionName` and `versionCode` are defined only in `app/build.gradle.kts`.
 
 Gradle 9.4.1 and Compose Compiler 2.2.10 are intentionally matched to AGP
 9.2.0's documented Gradle default and built-in Kotlin version. Android lint may

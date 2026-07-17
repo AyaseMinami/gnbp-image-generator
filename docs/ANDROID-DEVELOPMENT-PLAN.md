@@ -483,7 +483,9 @@ long-term traceability.
 
 1. Application ID: `io.github.ayaseminami.gnbp`; publisher: `AyaseMinami`.
 2. `minSdk 26`; target the latest stable Android API at implementation time.
-   Test API 26, 29, 33, and the latest stable API.
+   Test API 26, 29, 33, and the latest stable API when M4 introduces platform
+   storage behavior and again at the M6 device-matrix gate. M1 uses host-side
+   unit tests, lint, and APK assembly only.
 3. Publish the first edition as a side-loaded APK on GitHub Releases. Reconsider
    Google Play and domestic stores after the reliable-release milestone.
 4. The technical preview and side-loaded MVP guarantee only foreground
@@ -510,7 +512,8 @@ long-term traceability.
 
 ## 15. Immediate Next Gate
 
-1. Replace `android/.gitkeep` with the M1 Gradle scaffold.
+1. The workspace-only `android/.gitkeep` placeholder has been removed and
+   replaced by the M1 Gradle scaffold.
 2. Verify application ID, SDK levels, version catalog, localized resources,
    Android unit tests, debug APK assembly, and dual CI path filters.
 3. Commit a fixed M1 diff and send it for independent scaffold review.

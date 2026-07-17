@@ -1,12 +1,14 @@
 package io.github.ayaseminami.gnbp
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppConfigurationTest {
     @Test
-    fun `application identity matches the approved release contract`() {
+    fun `application identity and version shape match the release contract`() {
         assertEquals("io.github.ayaseminami.gnbp", BuildConfig.APPLICATION_ID)
-        assertEquals("0.1.0", BuildConfig.VERSION_NAME)
+        assertTrue(BuildConfig.VERSION_CODE > 0)
+        assertTrue(BuildConfig.VERSION_NAME.matches(Regex("\\d+\\.\\d+\\.\\d+")))
     }
 }

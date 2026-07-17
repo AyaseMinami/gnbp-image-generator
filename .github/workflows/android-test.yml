@@ -25,6 +25,9 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
       - name: Test and assemble debug APK
         working-directory: android
         run: bash ./gradlew lintDebug testDebugUnitTest assembleDebug --stacktrace
