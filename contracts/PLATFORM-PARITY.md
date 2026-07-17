@@ -19,4 +19,4 @@ scaffold review and before the M2 architecture gate.
 | Key/path metadata sanitization | `core/utils.py` | Development plan Section 7 | Planned M4; PNG parity later |
 | Chinese fallback and English resources | Desktop UI plus resolved M0 decision 9 | Android resources | Implemented M1 |
 | Application ID, SDK levels, and version source | Android-only | Resolved M0 decisions 1-2 | Implemented M1 |
-| Strict TLS plus per-host compatibility mode | Desktop uses `verify=False`; Android decision differs | `docs/ANDROID-RELAY-TRANSPORT-SECURITY.md` | Proposed specification; M2 blocked on review |
+| Strict TLS plus per-host compatibility mode | Desktop uses `verify=False`; Android decision differs | `docs/ANDROID-RELAY-TRANSPORT-SECURITY.md` | Accepted architecture; Planned M2 |

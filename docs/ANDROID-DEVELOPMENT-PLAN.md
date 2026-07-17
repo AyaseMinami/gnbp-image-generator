@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M1 accepted, M2 blocked on transport-security review
+Status: Approved; M1 and M2 transport architecture accepted
 Date: 2026-07-17
 
 ## 1. Objective
@@ -523,10 +523,10 @@ long-term traceability.
 ## 15. Immediate Next Gate
 
 1. M1 scaffold review passed at commit `d32d897` with no blocking findings.
-2. Independently review
+2. The independent architecture review accepted
    [`ANDROID-RELAY-TRANSPORT-SECURITY.md`](ANDROID-RELAY-TRANSPORT-SECURITY.md),
    including its global-cleartext tradeoff and API 37 behavior.
-3. Disposition material findings and change the specification status to
-   Accepted before production adapter coding.
-4. Implement the typed transport and provider contract slice with offline tests,
-   then submit a fixed M2 diff for slice review.
+3. Implement the typed transport and provider contract slice with offline tests
+   and a mechanical CI check that keeps networking construction inside the
+   provider transport module.
+4. Submit a fixed M2 diff for slice review.

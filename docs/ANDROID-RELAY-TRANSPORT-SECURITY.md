@@ -1,6 +1,6 @@
 # Android Relay Transport Security Specification
 
-Status: Proposed for M2 architecture review
+Status: Accepted after independent architecture review
 Date: 2026-07-18
 
 ## 1. Scope
@@ -24,8 +24,9 @@ It does not define profile persistence UI, API-key encryption, provider JSON
 payloads, or reliable background execution. Those are implemented in later
 milestones against the types and invariants established here.
 
-No production provider adapter may be implemented until this specification is
-independently reviewed and its material findings are dispositioned.
+The architecture gate passed at commit `1062296`. The accepted review
+refinements are incorporated in this revision and production adapter work may
+proceed against it.
 
 ## 2. Security Objectives
 
@@ -57,7 +58,10 @@ is therefore load-bearing rather than future hardening:
   anchors to the base configuration. On a physical device, localhost means the
   Android device, not the developer computer.
 - Certificate transparency is enabled by default for apps targeting API 37.
-  Private relay certificates must not be assumed to satisfy public CT policy.
+  Android explicitly exempts connections that use custom trust anchors from CT
+  verification. Strict system-trust profiles retain CT; custom-CA and imported
+  certificate modes use binding-scoped trust and do not require a dynamic
+  per-domain CT opt-out.
 - ECH is enabled by default for apps targeting API 37 when the networking library
   and server support it. If ECH is unavailable, the library may send ECH GREASE.
   Android's `<domainEncryption>` control is static network-security XML, while
@@ -69,6 +73,7 @@ is therefore load-bearing rather than future hardening:
 Primary references:
 
 - [Android 17 behavior changes for target API 37](https://developer.android.com/about/versions/17/behavior-changes-17)
+- [Android 17 behavior changes for all apps](https://developer.android.com/about/versions/17/behavior-changes-all)
 - [Local network permission](https://developer.android.com/privacy-and-security/local-network-permission)
 - [Network security configuration, including CT, ECH, and localhost](https://developer.android.com/privacy-and-security/security-config)
 - [`usesCleartextTraffic`](https://developer.android.com/guide/topics/manifest/application-element#usesCleartextTraffic)
@@ -144,10 +149,12 @@ snapshot for future tasks.
   binding;
 - `SpkiPins`: require one or more exact SHA-256 public-key pins for this binding.
 
-Without either refinement, verified TLS uses system trust. Verified TLS always
-retains strict hostname verification, certificate validity checks, and normal
-chain validation. Pinning is applied after trust validation; a pin alone does
-not make an otherwise invalid certificate trusted.
+Without either refinement, verified TLS uses system trust. When `CustomCa` is
+selected, the imported CA set replaces system trust for that binding rather than
+being added to it. A relay using a public CA should remain in strict system-trust
+mode. Verified TLS always retains strict hostname verification, certificate
+validity checks, and normal chain validation. Pinning is applied after trust
+validation; a pin alone does not make an otherwise invalid certificate trusted.
 
 Custom CA material must be DER or PEM X.509 data. PKCS#12 files, private keys,
 and executable/provider-supplied downloads are rejected. The certificate is
@@ -192,6 +199,11 @@ warning requirements as trust-all. The transport rejects HTTP before network I/O
 unless the call and binding both select this mode. It never downgrades HTTPS to
 HTTP.
 
+The warning must state that Gemini compatibility sends its API key in the URL
+query. In cleartext mode the key is readable on the network and may also be
+captured by intermediary access logs, making cleartext Gemini the highest-risk
+supported transport combination.
+
 Material platform tradeoff: arbitrary relay hosts are runtime data, but Android
 cleartext allowlists are static. Supporting arbitrary HTTP profiles therefore
 requires the application manifest/network-security policy to permit cleartext
@@ -217,6 +229,11 @@ is discarded when the fingerprint changes.
 - Provider adapters cannot access a generic unbound HTTP client.
 - Internal HTTP logging interceptors are disabled in release and tests verify
   that exception messages are sanitized before reaching application logs.
+- A Gradle verification task scans production sources and fails CI when
+  `OkHttpClient`, `SSLSocketFactory`, raw `Socket`, `HttpURLConnection`, or
+  equivalent network-client construction appears outside the provider transport
+  module. Adding another networking library requires an architecture review and
+  an update to this check.
 
 ## 8. Local-Network And Loopback Behavior
 
@@ -227,9 +244,17 @@ is discarded when the fingerprint changes.
 
 For an IP literal or a DNS result that is private, link-local, site-local,
 multicast, or broadcast, the transport requires `AllowLan`. Loopback addresses
-are excluded from that LAN classification. A DNS wrapper validates every
-resolved address before returning it to OkHttp, so a hostname resolving to a LAN
-address cannot bypass the profile choice.
+are excluded from that LAN classification. Unspecified addresses are rejected
+as unroutable. The classifier operates on normalized address bytes rather than
+input text and covers IPv4-mapped IPv6, IPv6 ULA (`fc00::/7`), IPv6 link-local
+(`fe80::/10`), IPv4 link-local (`169.254.0.0/16`), multicast, and broadcast.
+
+When Android exposes the active NAT64 prefix, the classifier decodes the
+embedded IPv4 address and applies the IPv4 rule to that address. It must not
+classify an entire NAT64 prefix as LAN: `64:ff9b::/96` can represent public as
+well as private IPv4 destinations. A DNS wrapper validates every resolved
+address before returning it to OkHttp, so a hostname resolving to a LAN address
+cannot bypass the profile choice.
 
 On API 37 and later, `AllowLan` also requires the runtime
 `ACCESS_LOCAL_NETWORK` grant. The app declares the permission in M2, but the UI
@@ -245,17 +270,23 @@ Loopback remains subject to the selected GNBP transport mode. Android 17's
 implicit localhost cleartext allowance must not cause an `http://localhost`
 profile to bypass GNBP's explicit `CleartextHttp` acknowledgement.
 
+Android 17 separately blocks loopback traffic across Android user/work profiles
+by default, while loopback within the same Android profile is unaffected. This
+platform rule applies to all apps and must not be confused with a GNBP API
+profile. Current official documentation does not support a stronger claim that
+two apps in the same Android profile require mutual loopback opt-in.
+
 ## 9. Android 17 CT And ECH Policy
 
 Strict verified TLS retains Android's default certificate-transparency and ECH
 behavior. The application does not disable either feature globally.
 
-Private CA and pinned-certificate modes may need a policy-scoped trust
-implementation because dynamic profile hosts cannot be listed in static Android
-network-security XML. The implementation must demonstrate on API 37 that the
-approved private-certificate cases work without disabling CT for unrelated
-hosts. It must continue to enforce the certificate, expiry, hostname, and pin
-rules defined above.
+Android does not perform CT verification on connections using custom trust
+anchors. Custom-CA and imported-certificate modes therefore use a policy-scoped
+trust implementation and are CT-exempt by construction without a static
+per-domain opt-out. They must continue to enforce the certificate, expiry,
+hostname, and pin rules defined above. Strict system-trust clients retain the
+platform's default CT behavior.
 
 The first release does not expose an ECH switch. Android's per-domain ECH
 configuration is static, while profile domains are runtime data, and disabling
@@ -290,6 +321,11 @@ failure:
 - `PossiblySent`: transmission began but no complete provider response was
   received;
 - `Responded`: an HTTP response was received, even if it was an error response.
+
+The production implementation uses an OkHttp `EventListener` and conservatively
+changes `NotSent` to `PossiblySent` at `requestHeadersStart`, before any request
+header or body byte is intentionally written. TLS handshake failure before that
+event remains `NotSent`; response-body completion is not the transition point.
 
 Cancellation before transmission is `Cancelled(NotSent)`. Cancellation,
 timeout, or connection loss after transmission starts is
@@ -349,8 +385,9 @@ Required cases:
 6. Every 3xx response is returned as `RedirectRejected` without a second request.
 7. A dropped connection before transmission is `NotSent`; a dropped connection,
    cancellation, or timeout after transmission begins is `PossiblySent`.
-8. Private, link-local, multicast, and loopback destinations exercise the local
-   network classification rules.
+8. Private IPv4, IPv4-mapped IPv6, IPv6 ULA, IPv4/IPv6 link-local, unspecified,
+   multicast, broadcast, loopback, and NAT64-wrapped private/public IPv4
+   destinations exercise the normalized address-classification rules.
 9. API key sentinels in Gemini URLs, OpenAI headers, exception messages, and
    provider error bodies never appear in captured logs.
 10. Malformed JSON, oversized responses, HTTP errors, cancellation, and timeout
@@ -364,8 +401,8 @@ redacted.
 
 ## 14. Architecture Gate Decisions
 
-The reviewer must explicitly accept or reject these material choices before M2
-adapter coding begins:
+The independent reviewer accepted these material choices before M2 adapter
+coding began:
 
 1. One deep `ProviderHttpTransport` module owns transport policy for both
    provider adapters.
