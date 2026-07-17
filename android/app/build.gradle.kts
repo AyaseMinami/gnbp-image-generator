@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -42,6 +43,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    sourceSets {
+        getByName("test").resources.directories.add("../../contracts")
+    }
 }
 
 dependencies {
@@ -50,8 +55,56 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
+}
+
+val verifyNetworkChokepoint by tasks.registering {
+    group = "verification"
+    description = "Rejects production network clients outside the provider transport module."
+
+    val sourceRoot = layout.projectDirectory.dir("src/main/java")
+    inputs.dir(sourceRoot)
+
+    doLast {
+        val constructionPatterns = listOf(
+            "OkHttpClient.Builder(",
+            "SSLSocketFactory",
+            "HttpURLConnection",
+            ".openConnection(",
+            "CronetEngine.Builder(",
+            "HttpEngine.Builder(",
+            "WebView(",
+            "Socket(",
+        )
+        val allowedPath = "/provider/transport/"
+        val violations = fileTree(sourceRoot).matching {
+            include("**/*.kt", "**/*.java")
+        }.flatMap { file ->
+            val normalizedPath = file.invariantSeparatorsPath
+            if (allowedPath in normalizedPath) {
+                emptyList()
+            } else {
+                file.readLines().mapIndexedNotNull { index, line ->
+                    val pattern = constructionPatterns.firstOrNull(line::contains)
+                    pattern?.let { "$normalizedPath:${index + 1} constructs $it" }
+                }
+            }
+        }
+        check(violations.isEmpty()) {
+            "Network construction must stay inside provider/transport:\n${violations.joinToString("\n")}"
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(verifyNetworkChokepoint)
 }

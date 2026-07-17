@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M1 and M2 transport architecture accepted
+Status: Approved; M2 provider slice implemented, pending slice review
 Date: 2026-07-17
 
 ## 1. Objective
@@ -526,7 +526,8 @@ long-term traceability.
 2. The independent architecture review accepted
    [`ANDROID-RELAY-TRANSPORT-SECURITY.md`](ANDROID-RELAY-TRANSPORT-SECURITY.md),
    including its global-cleartext tradeoff and API 37 behavior.
-3. Implement the typed transport and provider contract slice with offline tests
-   and a mechanical CI check that keeps networking construction inside the
-   provider transport module.
-4. Submit a fixed M2 diff for slice review.
+3. The typed transport and provider contract slice now has offline tests and a
+   mechanical CI check that keeps networking construction inside the provider
+   transport module.
+4. Submit the fixed M2 diff for independent slice review and resolve its
+   findings before starting M3.
