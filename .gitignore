@@ -36,6 +36,7 @@ replay_*.log
 .claude/
 .agents/
 CLAUDE.md
+AGENTS.md
 skills-lock.json
 
 # === 本地 API 探针（可能包含私有端点或密钥） ===
@@ -47,3 +48,15 @@ skills-lock.json
 
 # === 文档副本 ===
 openai文档/
+
+# === Android / Gradle ===
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+.externalNativeBuild/
+.cxx/
+captures/

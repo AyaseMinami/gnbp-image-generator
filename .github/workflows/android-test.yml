@@ -1,0 +1,30 @@
+name: Android Tests
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android-test.yml"
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android-test.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Test and assemble debug APK
+        working-directory: android
+        run: bash ./gradlew lintDebug testDebugUnitTest assembleDebug --stacktrace

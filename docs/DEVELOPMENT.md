@@ -1,6 +1,6 @@
 # Development Guide
 
-## Architecture
+## Desktop Architecture
 
 `main.py` creates the Qt application and `MainWindow`. The UI snapshots each
 request into `GenConfig` and sends it to `TaskManager`. Background workers route
@@ -18,7 +18,7 @@ Key modules:
 - `ui/main_window.py`: PySide6 user workflow
 - `ui/themes.py`: QSS themes and runtime control assets
 
-## Commands
+## Desktop Commands
 
 ```powershell
 py -3.11 -m pip install -r requirements.txt
@@ -30,10 +30,40 @@ py -3.11 -m PyInstaller build.spec --clean --noconfirm
 Tests must remain offline. Real API probes, local configuration, generated
 images, and packaged executables are intentionally excluded from Git.
 
+## Android Development
+
+The native Kotlin/Compose application is a self-contained Gradle project in
+`android/`. Its architecture and milestones are defined in
+`ANDROID-DEVELOPMENT-PLAN.md`; the platform decision is recorded in
+`adr/0001-native-android-implementation.md`.
+
+The current scaffold requires JDK 17 and Android SDK Platform 37. From
+PowerShell:
+
+```powershell
+cd android
+.\gradlew.bat lintDebug testDebugUnitTest assembleDebug
+```
+
+The equivalent command on Linux/macOS and in CI is:
+
+```bash
+cd android
+./gradlew lintDebug testDebugUnitTest assembleDebug
+```
+
+Android automated tests must remain offline. `local.properties`, signing
+stores, APK/AAB output, credentials, private endpoints, and generated images
+must not be committed.
+
 ## Versioning
 
-Change only `APP_VERSION` in `app_info.py`. The window title, Qt application
-version, build output name, and batch build messages derive from it.
+Desktop versions come from `APP_VERSION` in `app_info.py`. The window title, Qt
+application version, build output name, and batch build messages derive from it.
+
+Android versions are independent and come from `android/app/build.gradle.kts`.
+Use platform-prefixed release tags such as `desktop-v9.2.0` and
+`android-v0.1.0`.
 
 ## Branches
 

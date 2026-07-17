@@ -85,6 +85,12 @@ py -3.11 -m PyInstaller build.spec --clean --noconfirm
 构建结果为 `dist/GNBP-Image-Generator_V<版本号>.exe`。打包脚本会清理旧的 `build` 和
 `dist` 目录、重新生成图标，并在缺少 Python 3.11 时给出明确错误。
 
+### Android 开发状态
+
+原生 Kotlin/Compose Android 版本正在 `android/` 目录开发，目前尚未发布可用的
+移动版。构建要求和当前状态请参阅 `android/README.md`；开发计划请参阅
+`docs/ANDROID-DEVELOPMENT-PLAN.md`。
+
 ### 分支
 
 - `main`：稳定版本，也是 GitHub 默认分支
@@ -189,6 +195,12 @@ py -3.11 -m PyInstaller build.spec --clean --noconfirm
 The output is `dist/GNBP-Image-Generator_V<version>.exe`. The build script removes stale
 `build` and `dist` directories, regenerates the icon, and reports a clear error
 when Python 3.11 is unavailable.
+
+### Android Development Status
+
+A native Kotlin/Compose Android edition is under development in `android/`. It
+is not yet a functional mobile release. See `android/README.md` for the current
+build requirements and `docs/ANDROID-DEVELOPMENT-PLAN.md` for the roadmap.
 
 ### Branches
 
