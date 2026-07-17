@@ -2,25 +2,73 @@ package io.github.ayaseminami.gnbp.provider
 
 import io.github.ayaseminami.gnbp.provider.transport.DeliveryCertainty
 import io.github.ayaseminami.gnbp.provider.transport.HttpMethod
+import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkPermissionChecker
+import io.github.ayaseminami.gnbp.provider.transport.OkHttpProviderHttpTransport
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.ProviderEndpoint
 import io.github.ayaseminami.gnbp.provider.transport.ProviderHttpBody
 import io.github.ayaseminami.gnbp.provider.transport.ProviderHttpCall
 import io.github.ayaseminami.gnbp.provider.transport.ProviderHttpResult
 import io.github.ayaseminami.gnbp.provider.transport.ProviderHttpTransport
+import io.github.ayaseminami.gnbp.provider.transport.RequestOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
+import io.github.ayaseminami.gnbp.provider.transport.TransportFailure
+import io.github.ayaseminami.gnbp.provider.transport.TransportSecurityMode
+import io.github.ayaseminami.gnbp.provider.transport.UnsafeTransportAcknowledgement
+import io.github.ayaseminami.gnbp.provider.transport.UnsafeTransportMode
 import java.util.Base64
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeminiProviderTest {
+    @Test
+    fun `Gemini fixture completes through the production HTTP transport`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val imageBytes = "transport-image".encodeToByteArray()
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        fixture("gemini/generate-success.json")
+                            .replace(
+                                "PLACEHOLDER_BASE64_PNG",
+                                Base64.getEncoder().encodeToString(imageBytes),
+                            ),
+                    ),
+            )
+            val provider = GeminiProvider(
+                transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true }),
+                binding = cleartextBinding(server),
+                apiKey = ApiKey("gemini transport key"),
+            )
+
+            val result = provider.generate(geminiRequest())
+
+            assertTrue(imageBytes.contentEquals((result as ImageGenerationResult.Success).image.bytes))
+            val recorded = server.takeRequest()
+            assertEquals(
+                "/base/v1beta/models/model:generateContent",
+                recorded.requestUrl?.encodedPath,
+            )
+            assertEquals("gemini transport key", recorded.requestUrl?.queryParameter("key"))
+            assertFalse(recorded.body.readUtf8().contains("gemini transport key"))
+        }
+    }
+
     @Test
     fun `generation sends the desktop-compatible Gemini contract`() = runTest {
         val imageBytes = "deterministic-image".encodeToByteArray()
@@ -104,12 +152,15 @@ class GeminiProviderTest {
 
     @Test
     fun `Gemini HTTP error redacts raw and URL-encoded API keys`() = runTest {
-        val key = "secret+/="
+        val key = "secret key+/="
         val provider = GeminiProvider(
             transport = RecordingTransport(
                 ProviderHttpResult.Response(
                     401,
-                    "rejected secret+/= and secret%2B%2F%3D".encodeToByteArray(),
+                    (
+                        "rejected secret key+/=, secret+key%2B%2F%3D, " +
+                            "and secret%20key%2B%2F%3D"
+                    ).encodeToByteArray(),
                 ),
             ),
             binding = strictBinding(),
@@ -121,7 +172,8 @@ class GeminiProviderTest {
         val message = ((result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus)
             .providerMessage.orEmpty()
         assertFalse(message.contains(key))
-        assertFalse(message.contains("secret%2B%2F%3D"))
+        assertFalse(message.contains("secret+key%2B%2F%3D"))
+        assertFalse(message.contains("secret%20key%2B%2F%3D"))
         assertTrue(message.contains("[REDACTED]"))
     }
 
@@ -140,6 +192,37 @@ class GeminiProviderTest {
         assertEquals(DeliveryCertainty.Responded, error.certainty)
     }
 
+    @Test
+    fun `caller can cancel a transmitted provider request without making it retryable`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val cancellation = GenerationCancellation()
+            val provider = GeminiProvider(
+                transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true }),
+                binding = cleartextBinding(server),
+                apiKey = ApiKey("gemini-secret"),
+            )
+            val pending = async(start = CoroutineStart.UNDISPATCHED) {
+                provider.generate(geminiRequest(), cancellation)
+            }
+            checkNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+
+            cancellation.cancel()
+
+            assertEquals(
+                ImageGenerationResult.Failure(
+                    ProviderError.Transport(
+                        TransportFailure.RequestOutcomeUnknown(
+                            RequestOutcomeUnknownReason.Cancelled,
+                        ),
+                    ),
+                ),
+                pending.await(),
+            )
+        }
+    }
+
     private fun geminiRequest() = ImageGenerationRequest(
         model = "model",
         prompt = "prompt",
@@ -150,6 +233,24 @@ class GeminiProviderTest {
         profileId = ProfileId("gemini-profile"),
         endpoint = ProviderEndpoint.parse("https://relay.example/base"),
     )
+
+    private fun cleartextBinding(server: MockWebServer): TransportBinding {
+        val endpoint = ProviderEndpoint.parse(server.url("/base/").toString())
+        val profileId = ProfileId("cleartext-profile")
+        return TransportBinding(
+            profileId = profileId,
+            endpoint = endpoint,
+            securityMode = TransportSecurityMode.CleartextHttp(
+                UnsafeTransportAcknowledgement(
+                    profileId = profileId,
+                    authority = endpoint.authority,
+                    mode = UnsafeTransportMode.CleartextHttp,
+                    policyRevision = TransportBinding.CURRENT_POLICY_REVISION,
+                    acceptedAtEpochMillis = 1L,
+                ),
+            ),
+        )
+    }
 
     private fun fixture(path: String): String =
         checkNotNull(javaClass.classLoader?.getResource(path)) { "Missing fixture: $path" }.readText()

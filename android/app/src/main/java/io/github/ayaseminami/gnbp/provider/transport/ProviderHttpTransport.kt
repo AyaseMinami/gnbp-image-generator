@@ -141,9 +141,37 @@ sealed interface TransportFailure {
         override val certainty: DeliveryCertainty = DeliveryCertainty.Responded,
     ) : TransportFailure
 
+    data object CleartextRejected : TransportFailure {
+        override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent
+    }
+
+    data object UnsafeAcknowledgementStale : TransportFailure {
+        override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent
+    }
+
+    data object UnsafeAcknowledgementRequired : TransportFailure {
+        override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent
+    }
+
+    data object BindingMismatch : TransportFailure {
+        override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent
+    }
+
     data class Cancelled(
         override val certainty: DeliveryCertainty,
     ) : TransportFailure
+
+    data class RequestOutcomeUnknown(
+        val reason: RequestOutcomeUnknownReason,
+    ) : TransportFailure {
+        override val certainty: DeliveryCertainty = DeliveryCertainty.PossiblySent
+    }
+}
+
+enum class RequestOutcomeUnknownReason {
+    Cancelled,
+    Timeout,
+    ConnectionLost,
 }
 
 enum class NetworkFailureReason {

@@ -2,8 +2,10 @@ package io.github.ayaseminami.gnbp.provider
 
 import io.github.ayaseminami.gnbp.provider.transport.TransportFailure
 import io.github.ayaseminami.gnbp.provider.transport.DeliveryCertainty
+import io.github.ayaseminami.gnbp.provider.transport.TransportCancellation
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import okhttp3.HttpUrl
 
 class ApiKey(
     private val rawValue: String,
@@ -112,8 +114,19 @@ sealed interface ProviderError {
     }
 }
 
+class GenerationCancellation internal constructor(
+    internal val transportCancellation: TransportCancellation,
+) {
+    constructor() : this(TransportCancellation())
+
+    fun cancel() = transportCancellation.cancel()
+}
+
 interface ImageGenerationProvider {
-    suspend fun generate(request: ImageGenerationRequest): ImageGenerationResult
+    suspend fun generate(
+        request: ImageGenerationRequest,
+        cancellation: GenerationCancellation = GenerationCancellation(),
+    ): ImageGenerationResult
 }
 
 internal fun sanitizeProviderText(
@@ -121,10 +134,20 @@ internal fun sanitizeProviderText(
     apiKey: ApiKey,
 ): String? {
     val rawKey = apiKey.reveal()
-    val encodedKey = URLEncoder.encode(rawKey, StandardCharsets.UTF_8.name())
-    return value
-        .replace(rawKey, "[REDACTED]")
-        .replace(encodedKey, "[REDACTED]", ignoreCase = true)
+    val encodedKeys = setOf(
+        URLEncoder.encode(rawKey, StandardCharsets.UTF_8.name()),
+        HttpUrl.Builder()
+            .scheme("https")
+            .host("redaction.invalid")
+            .addQueryParameter("key", rawKey)
+            .build()
+            .encodedQuery
+            ?.substringAfter('='),
+    ).filterNotNull()
+    return encodedKeys
+        .fold(value.replace(rawKey, "[REDACTED]")) { sanitized, encodedKey ->
+            sanitized.replace(encodedKey, "[REDACTED]", ignoreCase = true)
+        }
         .take(200)
         .ifBlank { null }
 }

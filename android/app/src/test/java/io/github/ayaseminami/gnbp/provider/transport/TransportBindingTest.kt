@@ -37,32 +37,4 @@ class TransportBindingTest {
             ProviderEndpoint.parse("https://relay.example/v1#fragment")
         }
     }
-
-    @Test
-    fun `transport binding requires the scheme selected by its security mode`() {
-        val profileId = ProfileId("profile-1")
-
-        assertThrows(IllegalArgumentException::class.java) {
-            TransportBinding(
-                profileId = profileId,
-                endpoint = ProviderEndpoint.parse("http://relay.example"),
-                securityMode = TransportSecurityMode.VerifiedTls,
-            )
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            TransportBinding(
-                profileId = profileId,
-                endpoint = ProviderEndpoint.parse("https://relay.example"),
-                securityMode = TransportSecurityMode.CleartextHttp(
-                    acknowledgement = UnsafeTransportAcknowledgement(
-                        profileId = profileId,
-                        authority = EndpointAuthority("http", "relay.example", 80),
-                        mode = UnsafeTransportMode.CleartextHttp,
-                        policyRevision = 1,
-                        acceptedAtEpochMillis = 1L,
-                    ),
-                ),
-            )
-        }
-    }
 }

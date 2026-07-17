@@ -27,7 +27,10 @@ class OpenAiProvider(
 ) : ImageGenerationProvider {
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun generate(request: ImageGenerationRequest): ImageGenerationResult {
+    override suspend fun generate(
+        request: ImageGenerationRequest,
+        cancellation: GenerationCancellation,
+    ): ImageGenerationResult {
         val parameters = request.parameters as? GenerationParameters.OpenAi
             ?: return ImageGenerationResult.Failure(
                 ProviderError.InvalidRequest("OpenAI-compatible parameters are required"),
@@ -64,6 +67,7 @@ class OpenAiProvider(
                 } else {
                     request.toMultipartBody(parameters)
                 },
+                cancellation = cancellation.transportCancellation,
             ),
         )
         return when (response) {

@@ -25,7 +25,10 @@ class GeminiProvider(
         explicitNulls = false
     }
 
-    override suspend fun generate(request: ImageGenerationRequest): ImageGenerationResult {
+    override suspend fun generate(
+        request: ImageGenerationRequest,
+        cancellation: GenerationCancellation,
+    ): ImageGenerationResult {
         val parameters = request.parameters as? GenerationParameters.Gemini
             ?: return ImageGenerationResult.Failure(
                 ProviderError.InvalidRequest("Gemini parameters are required"),
@@ -45,6 +48,7 @@ class GeminiProvider(
                 body = ProviderHttpBody.Json(
                     json.encodeToString(request.toGeminiBody(parameters)),
                 ),
+                cancellation = cancellation.transportCancellation,
             ),
         )
         return when (response) {

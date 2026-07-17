@@ -45,6 +45,9 @@ internal class OkHttpProviderHttpTransport(
     private val baseDns: Dns = Dns.SYSTEM,
 ) : ProviderHttpTransport {
     override suspend fun execute(call: ProviderHttpCall): ProviderHttpResult = withContext(Dispatchers.IO) {
+        call.binding.validationFailure()?.let { failure ->
+            return@withContext ProviderHttpResult.Failure(failure)
+        }
         val tracker = DeliveryTracker()
         val request = try {
             call.toOkHttpRequest(tracker)
@@ -100,7 +103,12 @@ internal class OkHttpProviderHttpTransport(
             )
         } catch (error: SocketTimeoutException) {
             ProviderHttpResult.Failure(
-                TransportFailure.Network(NetworkFailureReason.Timeout, tracker.certainty()),
+                deliveryAwareFailure(
+                    certainty = tracker.certainty(),
+                    unknownReason = RequestOutcomeUnknownReason.Timeout,
+                ) { certainty ->
+                    TransportFailure.Network(NetworkFailureReason.Timeout, certainty)
+                },
             )
         } catch (error: UnknownHostException) {
             val policyError = error.findPolicyDnsException()
@@ -112,11 +120,17 @@ internal class OkHttpProviderHttpTransport(
             )
         } catch (error: IOException) {
             val failure = when {
-                call.cancellation.wasCancelledByCaller() -> TransportFailure.Cancelled(tracker.certainty())
-                error.findNested<InterruptedIOException>() != null -> TransportFailure.Network(
-                    NetworkFailureReason.Timeout,
-                    tracker.certainty(),
+                call.cancellation.wasCancelledByCaller() -> deliveryAwareFailure(
+                    certainty = tracker.certainty(),
+                    unknownReason = RequestOutcomeUnknownReason.Cancelled,
+                    knownFailure = TransportFailure::Cancelled,
                 )
+                error.findNested<InterruptedIOException>() != null -> deliveryAwareFailure(
+                    certainty = tracker.certainty(),
+                    unknownReason = RequestOutcomeUnknownReason.Timeout,
+                ) { certainty ->
+                    TransportFailure.Network(NetworkFailureReason.Timeout, certainty)
+                }
                 error.findNested<SSLPeerUnverifiedException>() != null -> TransportFailure.Tls(
                     call.binding.peerVerificationFailure(),
                     tracker.certainty(),
@@ -129,7 +143,12 @@ internal class OkHttpProviderHttpTransport(
                     TlsFailureReason.Handshake,
                     tracker.certainty(),
                 )
-                else -> TransportFailure.Network(NetworkFailureReason.Connection, tracker.certainty())
+                else -> deliveryAwareFailure(
+                    certainty = tracker.certainty(),
+                    unknownReason = RequestOutcomeUnknownReason.ConnectionLost,
+                ) { certainty ->
+                    TransportFailure.Network(NetworkFailureReason.Connection, certainty)
+                }
             }
             ProviderHttpResult.Failure(failure)
         } finally {
@@ -299,6 +318,10 @@ private class DeliveryTracker {
         certainty.compareAndSet(DeliveryCertainty.NotSent, DeliveryCertainty.PossiblySent)
     }
 
+    fun markResponded() {
+        certainty.set(DeliveryCertainty.Responded)
+    }
+
     fun certainty(): DeliveryCertainty = certainty.get()
 }
 
@@ -308,6 +331,21 @@ private class DeliveryEventListener(
     override fun requestHeadersStart(call: Call) {
         tracker.markPossiblySent()
     }
+
+    override fun responseHeadersStart(call: Call) {
+        tracker.markResponded()
+    }
+}
+
+private fun deliveryAwareFailure(
+    certainty: DeliveryCertainty,
+    unknownReason: RequestOutcomeUnknownReason,
+    knownFailure: (DeliveryCertainty) -> TransportFailure,
+): TransportFailure = when (certainty) {
+    DeliveryCertainty.PossiblySent -> TransportFailure.RequestOutcomeUnknown(unknownReason)
+    DeliveryCertainty.NotSent,
+    DeliveryCertainty.Responded,
+    -> knownFailure(certainty)
 }
 
 private class BindingDns(

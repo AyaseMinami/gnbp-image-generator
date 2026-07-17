@@ -84,11 +84,11 @@ sealed interface TransportSecurityMode {
     }
 
     data class UnsafeTrustAllTls(
-        val acknowledgement: UnsafeTransportAcknowledgement,
+        val acknowledgement: UnsafeTransportAcknowledgement? = null,
     ) : TransportSecurityMode
 
     data class CleartextHttp(
-        val acknowledgement: UnsafeTransportAcknowledgement,
+        val acknowledgement: UnsafeTransportAcknowledgement? = null,
     ) : TransportSecurityMode
 }
 
@@ -106,38 +106,6 @@ data class TransportBinding(
 ) {
     init {
         require(policyRevision > 0) { "Transport policy revision must be positive" }
-        when (val mode = securityMode) {
-            TransportSecurityMode.VerifiedTls,
-            is TransportSecurityMode.CustomCaTls,
-            is TransportSecurityMode.PinnedServerCertificateTls,
-            -> requireHttps()
-            is TransportSecurityMode.UnsafeTrustAllTls -> {
-                requireHttps()
-                requireAcknowledgement(mode.acknowledgement, UnsafeTransportMode.TrustAllTls)
-            }
-            is TransportSecurityMode.CleartextHttp -> {
-                require(endpoint.authority.scheme == "http") {
-                    "Cleartext mode requires an HTTP endpoint"
-                }
-                requireAcknowledgement(mode.acknowledgement, UnsafeTransportMode.CleartextHttp)
-            }
-        }
-    }
-
-    private fun requireHttps() {
-        require(endpoint.authority.scheme == "https") { "TLS mode requires an HTTPS endpoint" }
-    }
-
-    private fun requireAcknowledgement(
-        acknowledgement: UnsafeTransportAcknowledgement,
-        expectedMode: UnsafeTransportMode,
-    ) {
-        require(
-            acknowledgement.profileId == profileId &&
-                acknowledgement.authority == endpoint.authority &&
-                acknowledgement.mode == expectedMode &&
-                acknowledgement.policyRevision == policyRevision,
-        ) { "Unsafe transport acknowledgement does not match this binding" }
     }
 
     override fun toString(): String =
@@ -148,4 +116,45 @@ data class TransportBinding(
     companion object {
         const val CURRENT_POLICY_REVISION = 1
     }
+}
+
+internal fun TransportBinding.validationFailure(): TransportFailure? {
+    val isUnsafe = securityMode is TransportSecurityMode.UnsafeTrustAllTls ||
+        securityMode is TransportSecurityMode.CleartextHttp
+    if (policyRevision != TransportBinding.CURRENT_POLICY_REVISION) {
+        return if (isUnsafe) {
+            TransportFailure.UnsafeAcknowledgementStale
+        } else {
+            TransportFailure.BindingMismatch
+        }
+    }
+
+    return when (val mode = securityMode) {
+        TransportSecurityMode.VerifiedTls,
+        is TransportSecurityMode.CustomCaTls,
+        is TransportSecurityMode.PinnedServerCertificateTls,
+        -> if (endpoint.authority.scheme == "https") null else TransportFailure.CleartextRejected
+        is TransportSecurityMode.UnsafeTrustAllTls -> when {
+            endpoint.authority.scheme != "https" -> TransportFailure.BindingMismatch
+            else -> acknowledgementFailure(mode.acknowledgement, UnsafeTransportMode.TrustAllTls)
+        }
+        is TransportSecurityMode.CleartextHttp -> when {
+            endpoint.authority.scheme != "http" -> TransportFailure.BindingMismatch
+            else -> acknowledgementFailure(mode.acknowledgement, UnsafeTransportMode.CleartextHttp)
+        }
+    }
+}
+
+private fun TransportBinding.acknowledgementFailure(
+    acknowledgement: UnsafeTransportAcknowledgement?,
+    expectedMode: UnsafeTransportMode,
+): TransportFailure? = when {
+    acknowledgement == null -> TransportFailure.UnsafeAcknowledgementRequired
+    acknowledgement.policyRevision != TransportBinding.CURRENT_POLICY_REVISION ->
+        TransportFailure.UnsafeAcknowledgementStale
+    acknowledgement.profileId != profileId ||
+        acknowledgement.authority != endpoint.authority ||
+        acknowledgement.mode != expectedMode ||
+        acknowledgement.policyRevision != policyRevision -> TransportFailure.BindingMismatch
+    else -> null
 }

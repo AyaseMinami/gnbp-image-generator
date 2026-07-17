@@ -1,6 +1,7 @@
 package io.github.ayaseminami.gnbp.provider.transport
 
 import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -13,6 +14,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -35,6 +37,163 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `strict HTTP binding is rejected before DNS`() = runTest {
+        var dnsUsed = false
+        val binding = TransportBinding(
+            profileId = ProfileId("strict-http-profile"),
+            endpoint = ProviderEndpoint.parse("http://relay.invalid/base/"),
+            securityMode = TransportSecurityMode.VerifiedTls,
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns {
+                dnsUsed = true
+                listOf(InetAddress.getLoopbackAddress())
+            },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.CleartextRejected),
+            result,
+        )
+        assertFalse(dnsUsed)
+    }
+
+    @Test
+    fun `unsupported acknowledgement policy revision is rejected before DNS`() = runTest {
+        var dnsUsed = false
+        val endpoint = ProviderEndpoint.parse("http://relay.invalid/base/")
+        val profileId = ProfileId("stale-policy-profile")
+        val unsupportedRevision = TransportBinding.CURRENT_POLICY_REVISION + 1
+        val binding = TransportBinding(
+            profileId = profileId,
+            endpoint = endpoint,
+            securityMode = TransportSecurityMode.CleartextHttp(
+                UnsafeTransportAcknowledgement(
+                    profileId = profileId,
+                    authority = endpoint.authority,
+                    mode = UnsafeTransportMode.CleartextHttp,
+                    policyRevision = unsupportedRevision,
+                    acceptedAtEpochMillis = 1L,
+                ),
+            ),
+            policyRevision = unsupportedRevision,
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns {
+                dnsUsed = true
+                listOf(InetAddress.getLoopbackAddress())
+            },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.UnsafeAcknowledgementStale),
+            result,
+        )
+        assertFalse(dnsUsed)
+    }
+
+    @Test
+    fun `unsafe acknowledgement for another authority is a typed binding mismatch`() = runTest {
+        var dnsUsed = false
+        val endpoint = ProviderEndpoint.parse("http://relay.invalid/base/")
+        val profileId = ProfileId("mismatched-authority-profile")
+        val binding = TransportBinding(
+            profileId = profileId,
+            endpoint = endpoint,
+            securityMode = TransportSecurityMode.CleartextHttp(
+                UnsafeTransportAcknowledgement(
+                    profileId = profileId,
+                    authority = EndpointAuthority("http", "other.invalid", 80),
+                    mode = UnsafeTransportMode.CleartextHttp,
+                    policyRevision = TransportBinding.CURRENT_POLICY_REVISION,
+                    acceptedAtEpochMillis = 1L,
+                ),
+            ),
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns {
+                dnsUsed = true
+                listOf(InetAddress.getLoopbackAddress())
+            },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.BindingMismatch),
+            result,
+        )
+        assertFalse(dnsUsed)
+    }
+
+    @Test
+    fun `unsafe transport without acknowledgement is rejected before DNS`() = runTest {
+        var dnsUsed = false
+        val binding = TransportBinding(
+            profileId = ProfileId("missing-acknowledgement-profile"),
+            endpoint = ProviderEndpoint.parse("http://relay.invalid/base/"),
+            securityMode = TransportSecurityMode.CleartextHttp(acknowledgement = null),
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns {
+                dnsUsed = true
+                listOf(InetAddress.getLoopbackAddress())
+            },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.UnsafeAcknowledgementRequired),
+            result,
+        )
+        assertFalse(dnsUsed)
+    }
+
+    @Test
+    fun `cleartext mode cannot be attached to an HTTPS binding`() = runTest {
+        var dnsUsed = false
+        val endpoint = ProviderEndpoint.parse("https://relay.invalid/base/")
+        val profileId = ProfileId("https-cleartext-profile")
+        val binding = TransportBinding(
+            profileId = profileId,
+            endpoint = endpoint,
+            securityMode = TransportSecurityMode.CleartextHttp(
+                UnsafeTransportAcknowledgement(
+                    profileId = profileId,
+                    authority = endpoint.authority,
+                    mode = UnsafeTransportMode.CleartextHttp,
+                    policyRevision = TransportBinding.CURRENT_POLICY_REVISION,
+                    acceptedAtEpochMillis = 1L,
+                ),
+            ),
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns {
+                dnsUsed = true
+                listOf(InetAddress.getLoopbackAddress())
+            },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.BindingMismatch),
+            result,
+        )
+        assertFalse(dnsUsed)
+    }
+
+    @Test
     fun `redirect is returned without replaying the request`() = runTest {
         MockWebServer().use { server ->
             server.start()
@@ -53,7 +212,7 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
-    fun `disconnect after request starts preserves possibly-sent certainty`() = runTest {
+    fun `disconnect after request starts is an uncertain request outcome`() = runTest {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
@@ -61,9 +220,14 @@ class OkHttpProviderHttpTransportTest {
 
             val result = transport.execute(call(cleartextBinding(server), listOf("v1", "generate")))
 
-            assertTrue(result is ProviderHttpResult.Failure)
-            val failure = (result as ProviderHttpResult.Failure).error
-            assertEquals(DeliveryCertainty.PossiblySent, failure.certainty)
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.RequestOutcomeUnknown(
+                        RequestOutcomeUnknownReason.ConnectionLost,
+                    ),
+                ),
+                result,
+            )
         }
     }
 
@@ -86,6 +250,30 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `DNS failure before transmission remains not sent`() = runTest {
+        val binding = TransportBinding(
+            profileId = ProfileId("dns-failure-profile"),
+            endpoint = ProviderEndpoint.parse("https://relay.invalid/base/"),
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns { throw UnknownHostException("offline test") },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(
+                TransportFailure.Network(
+                    NetworkFailureReason.Dns,
+                    DeliveryCertainty.NotSent,
+                ),
+            ),
+            result,
+        )
+    }
+
+    @Test
     fun `custom CA trust is scoped to the selected TLS binding`() = runTest {
         tlsServer().use { fixture ->
             fixture.server.enqueue(MockResponse().setBody("trusted"))
@@ -102,6 +290,93 @@ class OkHttpProviderHttpTransportTest {
             val result = transport.execute(call(binding, listOf("v1", "generate")))
 
             assertEquals(ProviderHttpResult.Response(200, "trusted".encodeToByteArray()), result)
+        }
+    }
+
+    @Test
+    fun `custom CA does not leak into a strict profile`() = runTest {
+        tlsServer().use { fixture ->
+            fixture.server.enqueue(MockResponse().setBody("custom trusted"))
+            val transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+            val endpoint = ProviderEndpoint.parse(fixture.server.url("/base/").toString())
+            val customBinding = TransportBinding(
+                profileId = ProfileId("custom-profile"),
+                endpoint = endpoint,
+                securityMode = TransportSecurityMode.CustomCaTls(
+                    certificates = listOf(fixture.ca.certificate.encoded),
+                ),
+            )
+            val strictBinding = TransportBinding(
+                profileId = ProfileId("strict-profile"),
+                endpoint = endpoint,
+            )
+
+            val customResult = transport.execute(call(customBinding, listOf("v1", "generate")))
+            val strictResult = transport.execute(call(strictBinding, listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Response(200, "custom trusted".encodeToByteArray()),
+                customResult,
+            )
+            assertTrue(
+                "result=$strictResult",
+                strictResult is ProviderHttpResult.Failure && strictResult.error is TransportFailure.Tls,
+            )
+            assertEquals(DeliveryCertainty.NotSent, (strictResult as ProviderHttpResult.Failure).error.certainty)
+        }
+    }
+
+    @Test
+    fun `custom CA retains strict hostname verification`() = runTest {
+        tlsServer(serverHostname = "wrong-host.invalid").use { fixture ->
+            val endpoint = ProviderEndpoint.parse(fixture.server.url("/base/").toString())
+            val binding = TransportBinding(
+                profileId = ProfileId("wrong-host-profile"),
+                endpoint = endpoint,
+                securityMode = TransportSecurityMode.CustomCaTls(
+                    certificates = listOf(fixture.ca.certificate.encoded),
+                ),
+            )
+
+            val result = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+                .execute(call(binding, listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.Tls(
+                        TlsFailureReason.HostnameMismatch,
+                        DeliveryCertainty.NotSent,
+                    ),
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `custom CA rejects an expired server certificate`() = runTest {
+        tlsServer(validityInterval = 0L..1_000L).use { fixture ->
+            val endpoint = ProviderEndpoint.parse(fixture.server.url("/base/").toString())
+            val binding = TransportBinding(
+                profileId = ProfileId("expired-certificate-profile"),
+                endpoint = endpoint,
+                securityMode = TransportSecurityMode.CustomCaTls(
+                    certificates = listOf(fixture.ca.certificate.encoded),
+                ),
+            )
+
+            val result = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+                .execute(call(binding, listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.Tls(
+                        TlsFailureReason.CertificateRejected,
+                        DeliveryCertainty.NotSent,
+                    ),
+                ),
+                result,
+            )
         }
     }
 
@@ -133,6 +408,73 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `trust all TLS does not leak into a strict profile`() = runTest {
+        tlsServer().use { fixture ->
+            fixture.server.enqueue(MockResponse().setBody("unsafe trusted"))
+            val transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+            val endpoint = ProviderEndpoint.parse(fixture.server.url("/base/").toString())
+            val unsafeProfileId = ProfileId("unsafe-isolation-profile")
+            val unsafeBinding = TransportBinding(
+                profileId = unsafeProfileId,
+                endpoint = endpoint,
+                securityMode = TransportSecurityMode.UnsafeTrustAllTls(
+                    acknowledgement = UnsafeTransportAcknowledgement(
+                        profileId = unsafeProfileId,
+                        authority = endpoint.authority,
+                        mode = UnsafeTransportMode.TrustAllTls,
+                        policyRevision = TransportBinding.CURRENT_POLICY_REVISION,
+                        acceptedAtEpochMillis = 1L,
+                    ),
+                ),
+            )
+            val strictBinding = TransportBinding(
+                profileId = ProfileId("strict-isolation-profile"),
+                endpoint = endpoint,
+            )
+
+            val unsafeResult = transport.execute(call(unsafeBinding, listOf("v1", "generate")))
+            val strictResult = transport.execute(call(strictBinding, listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Response(200, "unsafe trusted".encodeToByteArray()),
+                unsafeResult,
+            )
+            assertTrue(
+                "result=$strictResult",
+                strictResult is ProviderHttpResult.Failure && strictResult.error is TransportFailure.Tls,
+            )
+            assertEquals(DeliveryCertainty.NotSent, (strictResult as ProviderHttpResult.Failure).error.certainty)
+        }
+    }
+
+    @Test
+    fun `pinned server certificate keeps hostname verification by default`() = runTest {
+        tlsServer(serverHostname = "certificate-name.invalid").use { fixture ->
+            val endpoint = ProviderEndpoint.parse(fixture.server.url("/base/").toString())
+            val binding = TransportBinding(
+                profileId = ProfileId("strict-pinned-hostname-profile"),
+                endpoint = endpoint,
+                securityMode = TransportSecurityMode.PinnedServerCertificateTls(
+                    certificate = fixture.serverCertificate.certificate.encoded,
+                ),
+            )
+
+            val result = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+                .execute(call(binding, listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.Tls(
+                        TlsFailureReason.HostnameMismatch,
+                        DeliveryCertainty.NotSent,
+                    ),
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
     fun `pinned server certificate can explicitly replace hostname identity`() = runTest {
         tlsServer(serverHostname = "certificate-name.invalid").use { fixture ->
             fixture.server.enqueue(MockResponse().setBody("pinned"))
@@ -154,7 +496,7 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
-    fun `timeout after request headers is possibly sent`() = runTest {
+    fun `timeout after request headers is an uncertain request outcome`() = runTest {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
@@ -167,9 +509,8 @@ class OkHttpProviderHttpTransportTest {
 
             assertEquals(
                 ProviderHttpResult.Failure(
-                    TransportFailure.Network(
-                        NetworkFailureReason.Timeout,
-                        DeliveryCertainty.PossiblySent,
+                    TransportFailure.RequestOutcomeUnknown(
+                        RequestOutcomeUnknownReason.Timeout,
                     ),
                 ),
                 result,
@@ -197,9 +538,59 @@ class OkHttpProviderHttpTransportTest {
 
             assertEquals(
                 ProviderHttpResult.Failure(
-                    TransportFailure.Cancelled(DeliveryCertainty.PossiblySent),
+                    TransportFailure.RequestOutcomeUnknown(
+                        RequestOutcomeUnknownReason.Cancelled,
+                    ),
                 ),
                 pending.await(),
+            )
+        }
+    }
+
+    @Test
+    fun `cancellation before transmission remains not sent`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val cancellation = TransportCancellation().apply { cancel() }
+            val transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+
+            val result = transport.execute(
+                call(cleartextBinding(server), listOf("v1", "generate")).copy(
+                    cancellation = cancellation,
+                ),
+            )
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.Cancelled(DeliveryCertainty.NotSent),
+                ),
+                result,
+            )
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `response body failure retains responded certainty`() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                MockResponse()
+                    .setBody("response-body-that-will-be-cut-short")
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY),
+            )
+            val transport = OkHttpProviderHttpTransport(LocalNetworkPermissionChecker { true })
+
+            val result = transport.execute(call(cleartextBinding(server), listOf("v1", "generate")))
+
+            assertEquals(
+                ProviderHttpResult.Failure(
+                    TransportFailure.Network(
+                        NetworkFailureReason.Connection,
+                        DeliveryCertainty.Responded,
+                    ),
+                ),
+                result,
             )
         }
     }
@@ -352,16 +743,22 @@ class OkHttpProviderHttpTransportTest {
         )
     }
 
-    private fun tlsServer(serverHostname: String = "localhost"): TlsServerFixture {
+    private fun tlsServer(
+        serverHostname: String = "localhost",
+        validityInterval: LongRange? = null,
+    ): TlsServerFixture {
         val ca = HeldCertificate.Builder()
             .certificateAuthority(0)
             .commonName("GNBP test CA")
             .build()
-        val serverCertificate = HeldCertificate.Builder()
+        val certificateBuilder = HeldCertificate.Builder()
             .commonName(serverHostname)
             .addSubjectAlternativeName(serverHostname)
             .signedBy(ca)
-            .build()
+        validityInterval?.let { interval ->
+            certificateBuilder.validityInterval(interval.first, interval.last)
+        }
+        val serverCertificate = certificateBuilder.build()
         val serverCertificates = HandshakeCertificates.Builder()
             .heldCertificate(serverCertificate, ca.certificate)
             .build()
