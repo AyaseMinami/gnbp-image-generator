@@ -1,6 +1,7 @@
 # Platform Parity Matrix
 
-Status values describe the Android implementation at the M1 scaffold review.
+Status values describe the Android implementation after the accepted M1
+scaffold review and before the M2 architecture gate.
 
 | Behavior | Desktop reference | Shared contract | Android status |
 | --- | --- | --- | --- |
@@ -18,4 +19,4 @@ Status values describe the Android implementation at the M1 scaffold review.
 | Key/path metadata sanitization | `core/utils.py` | Development plan Section 7 | Planned M4; PNG parity later |
 | Chinese fallback and English resources | Desktop UI plus resolved M0 decision 9 | Android resources | Implemented M1 |
 | Application ID, SDK levels, and version source | Android-only | Resolved M0 decisions 1-2 | Implemented M1 |
-| Strict TLS plus per-host compatibility mode | Desktop uses `verify=False`; Android decision differs | TLS specification required before M2 | Planned M2 |
+| Strict TLS plus per-host compatibility mode | Desktop uses `verify=False`; Android decision differs | `docs/ANDROID-RELAY-TRANSPORT-SECURITY.md` | Proposed specification; M2 blocked on review |

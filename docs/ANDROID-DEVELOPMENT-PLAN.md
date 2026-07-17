@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M1 ready for scaffold review
+Status: Approved; M1 accepted, M2 blocked on transport-security review
 Date: 2026-07-17
 
 ## 1. Objective
@@ -17,7 +17,7 @@ live outside either platform implementation.
 
 The platform choice and rejected alternatives are recorded in
 [`adr/0001-native-android-implementation.md`](adr/0001-native-android-implementation.md).
-That ADR remains proposed until the user accepts it during M0.
+That ADR was accepted by the user during M0.
 
 ## 2. Constraints
 
@@ -32,6 +32,8 @@ That ADR remains proposed until the user accepts it during M0.
   poor Android experience.
 - HTTPS certificate verification is secure by default. Compatibility behavior
   for relay services requires an explicit design decision before implementation.
+- API 37 local-network permission, certificate transparency, ECH, and localhost
+  behavior are part of the relay design rather than release hardening.
 - Paid generation requests must not be retried automatically when their outcome
   is unknown.
 
@@ -250,7 +252,9 @@ Behavior to change deliberately:
 
 - filesystem paths become durable asset references or Android content URIs;
 - plain-text API keys become encrypted secrets;
-- insecure TLS is not globally enabled;
+- trust-all TLS is never enabled globally; any platform-wide cleartext opt-in
+  required for arbitrary HTTP relay hosts is governed by the reviewed transport
+  specification and exact application-layer binding checks;
 - mobile concurrency defaults to one and is initially capped at two;
 - task status and errors become typed values rather than display strings;
 - Android system actions replace Explorer, `os.startfile`, `winsound`, desktop
@@ -289,6 +293,9 @@ while a shared-contract change selects every affected platform workflow.
 
 ### M2 - Provider Contract Slice
 
+- review and accept
+  [`ANDROID-RELAY-TRANSPORT-SECURITY.md`](ANDROID-RELAY-TRANSPORT-SECURITY.md)
+  before production adapter coding;
 - define typed requests, results, and errors;
 - implement Gemini and OpenAI-compatible adapters;
 - cover generation, editing, blocked responses, HTTP failures, malformed JSON,
@@ -383,6 +390,9 @@ complete until every affected platform test passes.
 - Use normal TLS verification by default.
 - Do not implement a trust-all network client without a separately reviewed and
   user-approved compatibility specification completed before M2 adapter work.
+- Keep API 37 CT and ECH enabled globally, distinguish LAN permission from
+  localhost behavior, and scope any private-certificate exception to one
+  profile and exact authority.
 - Treat relay compatibility as an MVP input, not release hardening: the Android
   edition is not usable for its target audience unless the approved endpoint and
   certificate cases work by M5.
@@ -512,9 +522,11 @@ long-term traceability.
 
 ## 15. Immediate Next Gate
 
-1. The workspace-only `android/.gitkeep` placeholder has been removed and
-   replaced by the M1 Gradle scaffold.
-2. Verify application ID, SDK levels, version catalog, localized resources,
-   Android unit tests, debug APK assembly, and dual CI path filters.
-3. Commit a fixed M1 diff and send it for independent scaffold review.
-4. Resolve scaffold findings before starting M2 or its TLS specification.
+1. M1 scaffold review passed at commit `d32d897` with no blocking findings.
+2. Independently review
+   [`ANDROID-RELAY-TRANSPORT-SECURITY.md`](ANDROID-RELAY-TRANSPORT-SECURITY.md),
+   including its global-cleartext tradeoff and API 37 behavior.
+3. Disposition material findings and change the specification status to
+   Accepted before production adapter coding.
+4. Implement the typed transport and provider contract slice with offline tests,
+   then submit a fixed M2 diff for slice review.
