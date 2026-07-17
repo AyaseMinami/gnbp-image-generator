@@ -13,6 +13,7 @@ import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
@@ -44,6 +45,8 @@ internal class OkHttpProviderHttpTransport(
     private val callTimeoutMillis: Long = DEFAULT_CALL_TIMEOUT_MILLIS,
     private val baseDns: Dns = Dns.SYSTEM,
 ) : ProviderHttpTransport {
+    private val clientsByProfile = ConcurrentHashMap<ProfileId, CachedClient>()
+
     override suspend fun execute(call: ProviderHttpCall): ProviderHttpResult = withContext(Dispatchers.IO) {
         call.binding.validationFailure()?.let { failure ->
             return@withContext ProviderHttpResult.Failure(failure)
@@ -91,11 +94,18 @@ internal class OkHttpProviderHttpTransport(
             )
         } catch (error: SSLPeerUnverifiedException) {
             ProviderHttpResult.Failure(
-                TransportFailure.Tls(call.binding.peerVerificationFailure(), tracker.certainty()),
+                TransportFailure.Tls(error.peerVerificationFailure(call.binding), tracker.certainty()),
             )
         } catch (error: SSLHandshakeException) {
             ProviderHttpResult.Failure(
-                TransportFailure.Tls(TlsFailureReason.CertificateRejected, tracker.certainty()),
+                TransportFailure.Tls(
+                    if (error.findNested<PinnedCertificateMismatchException>() != null) {
+                        TlsFailureReason.PinMismatch
+                    } else {
+                        TlsFailureReason.CertificateRejected
+                    },
+                    tracker.certainty(),
+                ),
             )
         } catch (error: SSLException) {
             ProviderHttpResult.Failure(
@@ -119,6 +129,7 @@ internal class OkHttpProviderHttpTransport(
                 ),
             )
         } catch (error: IOException) {
+            val peerVerificationError = error.findNested<SSLPeerUnverifiedException>()
             val failure = when {
                 call.cancellation.wasCancelledByCaller() -> deliveryAwareFailure(
                     certainty = tracker.certainty(),
@@ -131,8 +142,12 @@ internal class OkHttpProviderHttpTransport(
                 ) { certainty ->
                     TransportFailure.Network(NetworkFailureReason.Timeout, certainty)
                 }
-                error.findNested<SSLPeerUnverifiedException>() != null -> TransportFailure.Tls(
-                    call.binding.peerVerificationFailure(),
+                peerVerificationError != null -> TransportFailure.Tls(
+                    peerVerificationError.peerVerificationFailure(call.binding),
+                    tracker.certainty(),
+                )
+                error.findNested<PinnedCertificateMismatchException>() != null -> TransportFailure.Tls(
+                    TlsFailureReason.PinMismatch,
                     tracker.certainty(),
                 )
                 error.findNested<CertificateException>() != null -> TransportFailure.Tls(
@@ -157,6 +172,19 @@ internal class OkHttpProviderHttpTransport(
     }
 
     private fun clientFor(binding: TransportBinding): OkHttpClient {
+        val fingerprint = binding.clientFingerprint()
+        return clientsByProfile.compute(binding.profileId) { _, existing ->
+            if (existing?.fingerprint == fingerprint) {
+                existing
+            } else {
+                val replacement = CachedClient(fingerprint, buildClient(binding))
+                existing?.client?.connectionPool?.evictAll()
+                replacement
+            }
+        }!!.client
+    }
+
+    private fun buildClient(binding: TransportBinding): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .retryOnConnectionFailure(false)
             .followRedirects(false)
@@ -253,6 +281,62 @@ internal class OkHttpProviderHttpTransport(
     }
 }
 
+private data class CachedClient(
+    val fingerprint: ClientFingerprint,
+    val client: OkHttpClient,
+)
+
+private data class ClientFingerprint(
+    val profileId: ProfileId,
+    val authority: EndpointAuthority,
+    val security: SecurityFingerprint,
+    val localNetworkMode: LocalNetworkMode,
+    val policyRevision: Int,
+)
+
+private sealed interface SecurityFingerprint {
+    data object VerifiedTls : SecurityFingerprint
+
+    data class CustomCaTls(
+        val certificateDigests: List<String>,
+        val spkiPins: List<String>,
+    ) : SecurityFingerprint
+
+    data class PinnedServerCertificateTls(
+        val certificateDigest: String,
+        val allowHostnameMismatch: Boolean,
+    ) : SecurityFingerprint
+
+    data object UnsafeTrustAllTls : SecurityFingerprint
+
+    data object CleartextHttp : SecurityFingerprint
+}
+
+private fun TransportBinding.clientFingerprint(): ClientFingerprint = ClientFingerprint(
+    profileId = profileId,
+    authority = endpoint.authority,
+    security = when (val mode = securityMode) {
+        TransportSecurityMode.VerifiedTls -> SecurityFingerprint.VerifiedTls
+        is TransportSecurityMode.CustomCaTls -> SecurityFingerprint.CustomCaTls(
+            certificateDigests = mode.certificates.map(ByteArray::sha256Hex).sorted(),
+            spkiPins = mode.spkiPins.sorted(),
+        )
+        is TransportSecurityMode.PinnedServerCertificateTls ->
+            SecurityFingerprint.PinnedServerCertificateTls(
+                certificateDigest = mode.certificate.sha256Hex(),
+                allowHostnameMismatch = mode.allowHostnameMismatch,
+            )
+        is TransportSecurityMode.UnsafeTrustAllTls -> SecurityFingerprint.UnsafeTrustAllTls
+        is TransportSecurityMode.CleartextHttp -> SecurityFingerprint.CleartextHttp
+    },
+    localNetworkMode = localNetworkMode,
+    policyRevision = policyRevision,
+)
+
+private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
+    .digest(this)
+    .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
 private fun exclusiveTrustManager(certificateBytes: List<ByteArray>): X509TrustManager {
     val certificates = parseCertificates(certificateBytes)
     require(certificates.all { it.basicConstraints >= 0 }) {
@@ -295,12 +379,15 @@ private class PinnedCertificateTrustManager(
         val leaf = chain?.firstOrNull() ?: throw CertificateException("Server sent no certificate")
         leaf.checkValidity()
         if (!MessageDigest.isEqual(leaf.encoded, pinnedCertificate.encoded)) {
-            throw CertificateException("Server certificate does not match the selected pin")
+            throw PinnedCertificateMismatchException()
         }
     }
 
     override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf(pinnedCertificate)
 }
+
+private class PinnedCertificateMismatchException :
+    CertificateException("Server certificate does not match the selected pin")
 
 @SuppressLint("CustomX509TrustManager")
 private object TrustAllManager : X509TrustManager {
@@ -382,8 +469,13 @@ private class BindingDns(
     }
 }
 
-private fun TransportBinding.peerVerificationFailure(): TlsFailureReason =
-    if ((securityMode as? TransportSecurityMode.CustomCaTls)?.spkiPins?.isNotEmpty() == true) {
+private fun SSLPeerUnverifiedException.peerVerificationFailure(
+    binding: TransportBinding,
+): TlsFailureReason =
+    if (
+        (binding.securityMode as? TransportSecurityMode.CustomCaTls)?.spkiPins?.isNotEmpty() == true &&
+        message?.startsWith("Certificate pinning failure!") == true
+    ) {
         TlsFailureReason.PinMismatch
     } else {
         TlsFailureReason.HostnameMismatch

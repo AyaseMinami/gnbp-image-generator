@@ -16,6 +16,7 @@ class NetworkAddressClassifierTest {
             "fc00::1" to NetworkAddressKind.LocalNetwork,
             "fe80::1" to NetworkAddressKind.LocalNetwork,
             "224.0.0.1" to NetworkAddressKind.LocalNetwork,
+            "255.255.255.255" to NetworkAddressKind.LocalNetwork,
             "ff02::1" to NetworkAddressKind.LocalNetwork,
             "127.0.0.1" to NetworkAddressKind.Loopback,
             "::1" to NetworkAddressKind.Loopback,
