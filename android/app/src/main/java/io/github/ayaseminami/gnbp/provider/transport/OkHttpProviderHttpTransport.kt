@@ -41,7 +41,9 @@ internal fun interface LocalNetworkPermissionChecker {
 
 internal class OkHttpProviderHttpTransport(
     private val localNetworkPermissionChecker: LocalNetworkPermissionChecker,
-    private val nat64Prefix: Nat64Prefix? = null,
+    private val nat64PrefixProvider: Nat64PrefixProvider = Nat64PrefixProvider {
+        Nat64Prefix.WellKnown
+    },
     private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     private val callTimeoutMillis: Long = DEFAULT_CALL_TIMEOUT_MILLIS,
     private val baseDns: Dns = Dns.SYSTEM,
@@ -203,7 +205,7 @@ internal class OkHttpProviderHttpTransport(
             .writeTimeout(400, TimeUnit.SECONDS)
             .readTimeout(400, TimeUnit.SECONDS)
             .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
-            .dns(BindingDns(binding, localNetworkPermissionChecker, nat64Prefix, baseDns))
+            .dns(BindingDns(binding, localNetworkPermissionChecker, nat64PrefixProvider, baseDns))
             .eventListenerFactory { call ->
                 DeliveryEventListener(requireNotNull(call.request().tag(DeliveryTracker::class.java)))
             }
@@ -448,7 +450,7 @@ private fun deliveryAwareFailure(
 private class BindingDns(
     private val binding: TransportBinding,
     private val permissionChecker: LocalNetworkPermissionChecker,
-    private val nat64Prefix: Nat64Prefix?,
+    private val nat64PrefixProvider: Nat64PrefixProvider,
     private val baseDns: Dns,
 ) : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
@@ -458,7 +460,7 @@ private class BindingDns(
             throw error
         }
         addresses.forEach { address ->
-            when (NetworkAddressClassifier.classify(address, nat64Prefix)) {
+            when (NetworkAddressClassifier.classify(address, nat64PrefixProvider.current())) {
                 NetworkAddressKind.Internet,
                 NetworkAddressKind.Loopback,
                 -> Unit

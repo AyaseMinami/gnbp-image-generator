@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GNBP 图像生成器</string>
+    <string name="pick_reference_images">选择参考图</string>
+    <plurals name="selected_reference_count">
+        <item quantity="other">已选择 %1$d 张参考图</item>
+    </plurals>
+    <plurals name="reference_import_failure_count">
+        <item quantity="other">%1$d 张参考图导入失败</item>
+    </plurals>
 </resources>

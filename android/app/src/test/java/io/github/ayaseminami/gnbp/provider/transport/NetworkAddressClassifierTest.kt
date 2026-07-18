@@ -44,16 +44,28 @@ class NetworkAddressClassifierTest {
     }
 
     @Test
-    fun `nat64 classification follows the embedded ipv4 destination`() {
-        val prefix = Nat64Prefix.parse("64:ff9b::/96")
-
+    fun `well known nat64 classification follows the embedded ipv4 destination by default`() {
         assertEquals(
             NetworkAddressKind.LocalNetwork,
-            NetworkAddressClassifier.classify(InetAddress.getByName("64:ff9b::a00:1"), prefix),
+            NetworkAddressClassifier.classify(InetAddress.getByName("64:ff9b::a00:1")),
         )
         assertEquals(
             NetworkAddressKind.Internet,
-            NetworkAddressClassifier.classify(InetAddress.getByName("64:ff9b::808:808"), prefix),
+            NetworkAddressClassifier.classify(InetAddress.getByName("64:ff9b::808:808")),
+        )
+    }
+
+    @Test
+    fun `network supplied nat64 prefix overrides the well known fallback`() {
+        val prefix = Nat64Prefix.parse("2001:db8:64::/96")
+
+        assertEquals(
+            NetworkAddressKind.LocalNetwork,
+            NetworkAddressClassifier.classify(InetAddress.getByName("2001:db8:64::a00:1"), prefix),
+        )
+        assertEquals(
+            NetworkAddressKind.Internet,
+            NetworkAddressClassifier.classify(InetAddress.getByName("2001:db8:64::808:808"), prefix),
         )
     }
 }

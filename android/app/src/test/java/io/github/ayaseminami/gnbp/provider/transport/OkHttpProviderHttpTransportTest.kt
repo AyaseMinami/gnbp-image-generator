@@ -868,6 +868,30 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `network supplied NAT64 prefix applies LAN policy to the embedded private address`() = runTest {
+        val binding = cleartextBinding("http://relay.invalid")
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            nat64PrefixProvider = Nat64PrefixProvider {
+                Nat64Prefix.parse("2001:db8:64::/96")
+            },
+            baseDns = Dns { listOf(InetAddress.getByName("2001:db8:64::a00:1")) },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(
+                TransportFailure.Network(
+                    NetworkFailureReason.LocalNetworkDisabled,
+                    DeliveryCertainty.NotSent,
+                ),
+            ),
+            result,
+        )
+    }
+
+    @Test
     fun `LAN profile requires the Android runtime permission before socket use`() = runTest {
         val binding = cleartextBinding("http://relay.invalid").copy(
             localNetworkMode = LocalNetworkMode.AllowLan,

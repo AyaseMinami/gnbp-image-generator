@@ -78,6 +78,10 @@ dependencies {
     testImplementation(libs.okhttp.tls)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.junit)
 }
 
 val verifyNetworkChokepoint by tasks.registering {

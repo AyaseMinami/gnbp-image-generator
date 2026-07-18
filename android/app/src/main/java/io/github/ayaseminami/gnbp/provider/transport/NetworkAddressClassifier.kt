@@ -24,6 +24,8 @@ internal class Nat64Prefix private constructor(
     }
 
     companion object {
+        val WellKnown: Nat64Prefix by lazy { parse("64:ff9b::/96") }
+
         fun parse(value: String): Nat64Prefix {
             val separator = value.lastIndexOf('/')
             require(separator > 0 && value.substring(separator + 1) == "96") {
@@ -31,6 +33,17 @@ internal class Nat64Prefix private constructor(
             }
             val address = InetAddress.getByName(value.substring(0, separator))
             require(address is Inet6Address) { "NAT64 prefix must be IPv6" }
+            val bytes = address.address
+            require(bytes.copyOfRange(PREFIX_BYTES, IPV6_BYTES).all { it == 0.toByte() }) {
+                "NAT64 prefix has host bits set"
+            }
+            return Nat64Prefix(bytes.copyOfRange(0, PREFIX_BYTES))
+        }
+
+        fun fromAddress(address: InetAddress, prefixLength: Int): Nat64Prefix {
+            require(address is Inet6Address && prefixLength == 96) {
+                "Only IPv6 /96 NAT64 prefixes are supported"
+            }
             val bytes = address.address
             require(bytes.copyOfRange(PREFIX_BYTES, IPV6_BYTES).all { it == 0.toByte() }) {
                 "NAT64 prefix has host bits set"
@@ -46,7 +59,7 @@ internal class Nat64Prefix private constructor(
 internal object NetworkAddressClassifier {
     fun classify(
         address: InetAddress,
-        nat64Prefix: Nat64Prefix? = null,
+        nat64Prefix: Nat64Prefix? = Nat64Prefix.WellKnown,
     ): NetworkAddressKind = when (address) {
         is Inet4Address -> classifyIpv4(address.address)
         is Inet6Address -> classifyIpv6(address, nat64Prefix)

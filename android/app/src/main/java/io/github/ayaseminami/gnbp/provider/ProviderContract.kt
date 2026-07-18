@@ -32,6 +32,9 @@ data class ReferenceImage(
         require(mimeType.startsWith("image/")) { "Reference MIME type must be an image" }
         require(displayName.isNotBlank()) { "Reference display name must not be blank" }
     }
+
+    override fun toString(): String =
+        "ReferenceImage(bytes=[REDACTED], mimeType=$mimeType, displayName=[REDACTED])"
 }
 
 data class ImageGenerationRequest(
@@ -73,7 +76,9 @@ sealed interface GenerationParameters {
 data class GeneratedImage(
     val bytes: ByteArray,
     val mimeType: String,
-)
+) {
+    override fun toString(): String = "GeneratedImage(bytes=[REDACTED], mimeType=$mimeType)"
+}
 
 sealed interface ImageGenerationResult {
     data class Success(val image: GeneratedImage) : ImageGenerationResult

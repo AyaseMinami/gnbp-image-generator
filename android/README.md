@@ -2,8 +2,10 @@
 
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
-secure persistence are implemented, but they are not connected to the Compose
-workflow yet and this is not a functional image-generation release.
+secure persistence are implemented. The M4 media input/output slice is pending
+review. The picker has a Compose entry point, but provider, persistence, and
+media outputs are not connected to the generation workflow yet; this is not a
+functional image-generation release.
 
 ## Toolchain
 
@@ -32,13 +34,13 @@ the AGP compatibility table.
 PowerShell:
 
 ```powershell
-.\gradlew.bat lintDebug testDebugUnitTest assembleDebug
+.\gradlew.bat lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
 ```
 
 Linux/macOS:
 
 ```bash
-./gradlew lintDebug testDebugUnitTest assembleDebug
+./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
 ```
 
 The debug APK is generated under `app/build/outputs/apk/debug/`. Build output is
@@ -72,3 +74,31 @@ be silently rebound to another host. Host-side DataStore tests use a
 DataStore Core in-memory storage seam because Windows JVM file replacement does
 not provide Android's atomic rename semantics; the production container uses
 the normal Android preference file storage.
+
+## Media Input And Output
+
+M4 adds the Android Photo Picker contract, durable app-private copies of picked
+content URIs, bounded reference-image decoding, and the desktop-compatible
+1536-pixel/JPEG-85 preparation contract. Imports and generated images are capped
+at 64 MiB, private URIs and paths are redacted from default string output, and
+the source URI grant is not retained after the private copy is made.
+
+Reference cleanup has an explicit policy: incomplete `.tmp` copies are eligible
+after one hour; unreferenced durable copies are eligible after seven days; IDs
+retained by a draft or task are never removed. The M4 picker draft is owned by a
+ViewModel across activity recreation and deletes unsubmitted copies when the
+owner is cleared. M5 owns startup cleanup after persistent task/draft
+repositories can supply the retained-ID set.
+
+Generated images use MediaStore. API 29 and newer use `RELATIVE_PATH` plus
+`IS_PENDING`; API 26-28 require `WRITE_EXTERNAL_STORAGE` and use the legacy
+`DATA` path. Failed writes remove the partial MediaStore row. Asset references
+provide preview/share intents and can be copied back into the reference store.
+Only an allowlist of non-secret generation parameters is exported through the
+MediaStore description field.
+
+Host tests cover large images, revoked URI access, save rollback, external
+deletion, scoped/legacy values, and collision-safe names. CI runs the
+instrumentation suite on API 26, 29, 33, and 37 emulators; local execution uses
+`connectedDebugAndroidTest` with a compatible device or emulator. The
+instrumentation APK is also compiled in the normal verification build.

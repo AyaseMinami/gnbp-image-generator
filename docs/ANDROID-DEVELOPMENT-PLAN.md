@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M2 slice passed review; M3 secure persistence pending review
+Status: Approved; M3 slice passed review; M4 media input/output pending review
 Date: 2026-07-17
 
 ## 1. Objective
@@ -330,7 +330,10 @@ Exit criteria: CRUD, migration, encryption, and restart tests pass.
 - implement and test both storage paths required by `minSdk 26`: permission and
   legacy insert behavior on API 26-28, and scoped MediaStore behavior on API 29+;
 - implement preview, share, and reuse-as-reference behavior;
-- define cleanup rules for temporary input copies.
+- define cleanup rules for temporary input copies: incomplete copies become
+  eligible after one hour, unreferenced durable copies after seven days, and
+  retained draft/task IDs are never removed; M5 owns startup cleanup after its
+  repositories can supply the retained-ID set.
 
 Exit criteria: instrumentation tests cover picker results, revoked access,
 large images, save failures, and external deletion.
@@ -533,5 +536,9 @@ long-term traceability.
 3. The typed transport and provider contract slice now has offline tests and a
    mechanical CI check that keeps networking construction inside the provider
    transport module.
-4. M2 slice review passed at commit `ab8282e`; M3 secure persistence is
-   implemented and awaiting independent slice review.
+4. M2 slice review passed at commit `ab8282e`.
+5. M3 secure-persistence review passed at commit `e67bdb8` with no blocking
+   findings.
+6. M4 media input/output, API 26-28 and API 29+ MediaStore paths, bounded image
+   preparation, and NAT64 discovery are implemented and awaiting independent
+   slice review.

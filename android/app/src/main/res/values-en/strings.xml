@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GNBP Image Generator</string>
+    <string name="pick_reference_images">Select reference images</string>
+    <plurals name="selected_reference_count">
+        <item quantity="one">%1$d reference image selected</item>
+        <item quantity="other">%1$d reference images selected</item>
+    </plurals>
+    <plurals name="reference_import_failure_count">
+        <item quantity="one">%1$d reference image failed to import</item>
+        <item quantity="other">%1$d reference images failed to import</item>
+    </plurals>
 </resources>
