@@ -5,11 +5,11 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.provider.ImageGenerationProvider
 import kotlinx.coroutines.flow.Flow
 
-fun interface GenerationProviderFactory {
+internal fun interface GenerationProviderFactory {
     fun create(profile: ProviderProfile): ImageGenerationProvider
 }
 
-fun interface ReferencePreparer {
+internal fun interface ReferencePreparer {
     suspend fun prepare(asset: ReferenceAssetInput): ImagePreparationResult
 }
 

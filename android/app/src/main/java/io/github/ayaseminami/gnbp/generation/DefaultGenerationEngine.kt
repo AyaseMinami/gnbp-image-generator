@@ -36,7 +36,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
-class DefaultGenerationEngine(
+internal class DefaultGenerationEngine(
     private val taskRepository: GenerationTaskRepository,
     private val providerFactory: GenerationProviderFactory,
     private val generatedAssetStore: GeneratedAssetStore,
