@@ -75,6 +75,8 @@ class GenerationAppInstrumentationTest {
         val repository = InstrumentedTaskRepository()
         val fakeImage = GeneratedImage(byteArrayOf(1, 2, 3), "image/png")
         val enqueueResult = AtomicReference<EnqueueResult?>()
+        val enqueueError = AtomicReference<Throwable?>()
+        val submitInvoked = AtomicReference(false)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also {
             workflowScope = it
         }
@@ -127,15 +129,20 @@ class GenerationAppInstrumentationTest {
                 onPickReferences = {},
                 onRemoveReference = {},
                 onSubmit = {
+                    submitInvoked.set(true)
                     scope.launch {
-                        val result = createdEngine.enqueue(
-                            GenerationBatchRequest(
-                                profileId = profile.id,
-                                prompt = state.prompt,
-                                parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
-                            ),
-                        )
-                        enqueueResult.set(result)
+                        try {
+                            val result = createdEngine.enqueue(
+                                GenerationBatchRequest(
+                                    profileId = profile.id,
+                                    prompt = state.prompt,
+                                    parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
+                                ),
+                            )
+                            enqueueResult.set(result)
+                        } catch (error: Throwable) {
+                            enqueueError.set(error)
+                        }
                     }
                 },
                 onCancelTask = {},
@@ -149,8 +156,11 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.enqueue_generation))
             .assertIsEnabled()
             .performClick()
-        compose.waitUntil(timeoutMillis = 10_000) { enqueueResult.get() != null }
-        assertTrue(enqueueResult.get() is EnqueueResult.Accepted)
+        compose.waitUntil(timeoutMillis = 5_000) { submitInvoked.get() }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            enqueueResult.get() != null || enqueueError.get() != null
+        }
+        assertTrue("enqueue failed: ${enqueueError.get()}", enqueueResult.get() is EnqueueResult.Accepted)
         compose.waitUntil(timeoutMillis = 10_000) { repository.hasTerminalTask() }
         assertTrue(repository.tasksSnapshot().single().status is TaskStatus.Succeeded)
 
