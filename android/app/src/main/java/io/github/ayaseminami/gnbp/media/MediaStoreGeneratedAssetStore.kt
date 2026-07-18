@@ -86,7 +86,7 @@ class MediaStoreGeneratedAssetStore(
 
         val id = MediaAssetId(idGenerator())
         val extension = if (image.mimeType == "image/png") "png" else "jpg"
-        val displayName = "gnbp_${nowEpochMillis()}_${id.value.take(8)}.$extension"
+        val displayName = "gnbp_${nowEpochMillis()}_${id.value}.$extension"
         val values = if (sdkInt >= Build.VERSION_CODES.Q) {
             scopedValues(displayName, image.mimeType, metadata)
         } else {

@@ -344,6 +344,10 @@ large images, save failures, and external deletion.
 - build Generate and Tasks screens;
 - add immutable batch snapshots, concurrency control, queued cancellation, and
   explicit retry;
+- prepare reference images off the main thread before enqueue, copy their bytes
+  into the immutable task snapshot, and transfer ownership to the task so draft
+  cleanup cannot invalidate queued or running work;
+- perform draft removal and cleanup file I/O off the main thread;
 - on startup, reconcile any task left in `Running` as `OutcomeUnknown` and never
   retry it automatically, even in the foreground-only MVP;
 - connect real adapters only after fake-driven workflow tests pass.
@@ -540,5 +544,9 @@ long-term traceability.
 5. M3 secure-persistence review passed at commit `e67bdb8` with no blocking
    findings.
 6. M4 media input/output, API 26-28 and API 29+ MediaStore paths, bounded image
-   preparation, and NAT64 discovery are implemented and awaiting independent
-   slice review.
+   preparation, and NAT64 discovery passed independent code review at commit
+   `61c25fd` with no blocking code findings. The M4 gate remains pending until
+   `connectedDebugAndroidTest` passes on API 26, 29, 33, and 37. On API 26-29,
+   Android does not expose a network-specific NAT64 prefix; the classifier can
+   recognize the well-known `64:ff9b::/96` prefix but not a provider-specific
+   prefix on those OS versions.

@@ -125,13 +125,13 @@ class MediaStoreGeneratedAssetStoreTest {
     }
 
     @Test
-    fun `same millisecond saves retain collision safe identities`() = runTest {
+    fun `same millisecond legacy saves do not truncate collision safe identities`() = runTest {
         val gateway = FakeMediaStoreGateway()
-        val ids = ArrayDeque(listOf("asset_1", "asset_2"))
+        val ids = ArrayDeque(listOf("12345678-first", "12345678-second"))
         val store = MediaStoreGeneratedAssetStore(
             gateway = gateway,
-            sdkInt = Build.VERSION_CODES.Q,
-            hasLegacyWritePermission = { false },
+            sdkInt = Build.VERSION_CODES.P,
+            hasLegacyWritePermission = { true },
             legacyPicturesDirectory = root,
             nowEpochMillis = { 1234L },
             idGenerator = ids::removeFirst,
@@ -142,6 +142,8 @@ class MediaStoreGeneratedAssetStoreTest {
 
         assertFalse(first.asset.id == second.asset.id)
         assertFalse(first.asset.displayName == second.asset.displayName)
+        assertTrue(first.asset.displayName.contains("12345678-first"))
+        assertTrue(second.asset.displayName.contains("12345678-second"))
     }
 
     private fun testStore(

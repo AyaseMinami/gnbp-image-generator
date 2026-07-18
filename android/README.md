@@ -2,10 +2,11 @@
 
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
-secure persistence are implemented. The M4 media input/output slice is pending
-review. The picker has a Compose entry point, but provider, persistence, and
-media outputs are not connected to the generation workflow yet; this is not a
-functional image-generation release.
+secure persistence are implemented. The M4 media input/output slice passed code
+review, but its device gate remains pending until the API 26/29/33/37 emulator
+matrix passes. The picker has a Compose entry point, but provider, persistence,
+and media outputs are not connected to the generation workflow yet; this is not
+a functional image-generation release.
 
 ## Toolchain
 
@@ -102,3 +103,8 @@ deletion, scoped/legacy values, and collision-safe names. CI runs the
 instrumentation suite on API 26, 29, 33, and 37 emulators; local execution uses
 `connectedDebugAndroidTest` with a compatible device or emulator. The
 instrumentation APK is also compiled in the normal verification build.
+
+Android exposes the active network's NAT64 prefix only on API 30 and newer. On
+API 26-29 the address classifier still recognizes the well-known
+`64:ff9b::/96` prefix, but a carrier-specific prefix cannot be discovered and is
+a documented platform limitation.
