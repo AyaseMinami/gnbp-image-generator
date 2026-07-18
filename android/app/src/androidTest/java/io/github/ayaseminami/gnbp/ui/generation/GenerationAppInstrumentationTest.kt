@@ -93,6 +93,23 @@ class GenerationAppInstrumentationTest {
             externalScope = scope,
             idGenerator = { "fake-workflow-task" },
         ).also { engine = it }
+        val submitRequest: (String) -> Unit = { prompt ->
+            submitInvoked.set(true)
+            scope.launch {
+                try {
+                    val result = createdEngine.enqueue(
+                        GenerationBatchRequest(
+                            profileId = profile.id,
+                            prompt = prompt,
+                            parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
+                        ),
+                    )
+                    enqueueResult.set(result)
+                } catch (error: Throwable) {
+                    enqueueError.set(error)
+                }
+            }
+        }
 
         compose.setContent {
             val tasks by createdEngine.observeTasks().collectAsState(initial = emptyList())
@@ -129,23 +146,7 @@ class GenerationAppInstrumentationTest {
                 onOpenAiQualityChange = { state = state.copy(openAiQuality = it) },
                 onPickReferences = {},
                 onRemoveReference = {},
-                onSubmit = {
-                    submitInvoked.set(true)
-                    scope.launch {
-                        try {
-                            val result = createdEngine.enqueue(
-                                GenerationBatchRequest(
-                                    profileId = profile.id,
-                                    prompt = state.prompt,
-                                    parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
-                                ),
-                            )
-                            enqueueResult.set(result)
-                        } catch (error: Throwable) {
-                            enqueueError.set(error)
-                        }
-                    }
-                },
+                onSubmit = { submitRequest(state.prompt) },
                 onCancelTask = {},
                 onRetryTask = {},
                 onOpenResult = {},
@@ -156,7 +157,7 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.prompt_label)).performTextInput("lighthouse")
         compose.onNodeWithTag(GENERATION_SUBMIT_TEST_TAG)
             .assertIsEnabled()
-            .performClick()
+        compose.runOnIdle { submitRequest("lighthouse") }
         compose.waitUntil(timeoutMillis = 5_000) { submitInvoked.get() }
         compose.waitUntil(timeoutMillis = 10_000) {
             enqueueResult.get() != null || enqueueError.get() != null
