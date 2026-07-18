@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -77,6 +78,8 @@ private enum class AppSection {
     Generate,
     Tasks,
 }
+
+internal const val GENERATION_SUBMIT_TEST_TAG = "generation-submit"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -346,7 +349,9 @@ private fun GenerateScreen(
         Button(
             onClick = onSubmit,
             enabled = !state.isSubmitting && selectedProfile != null,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(GENERATION_SUBMIT_TEST_TAG),
         ) {
             Icon(Icons.Default.PlayArrow, contentDescription = null)
             Spacer(Modifier.width(8.dp))

@@ -9,8 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -155,7 +154,7 @@ class GenerationAppInstrumentationTest {
         }
 
         compose.onNodeWithText(context.getString(R.string.prompt_label)).performTextInput("lighthouse")
-        compose.onNode(hasText(context.getString(R.string.enqueue_generation)) and hasClickAction())
+        compose.onNodeWithTag(GENERATION_SUBMIT_TEST_TAG)
             .assertIsEnabled()
             .performClick()
         compose.waitUntil(timeoutMillis = 5_000) { submitInvoked.get() }
