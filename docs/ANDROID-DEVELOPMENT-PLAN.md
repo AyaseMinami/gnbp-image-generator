@@ -1,7 +1,7 @@
 # Android Development Plan
 
-Status: Approved; M3 slice passed review; M4 code passed review and redefined device gate pending
-Date: 2026-07-17
+Status: Approved; M4 passed; M5 in progress
+Date: 2026-07-19
 
 ## 1. Objective
 
@@ -387,6 +387,8 @@ automated tests remain offline.
 - implement controlled foreground work and notifications;
 - handle process death and uncertain paid-request outcomes;
 - validate URI persistence across restart;
+- add a blocking ELF program-header check that rejects arm64 native libraries
+  whose `LOAD` segments have `p_align < 0x4000`;
 - complete privacy, signing, release, and store documentation as applicable.
 
 Exit criteria: interruption scenarios cannot silently lose successful results or
@@ -572,8 +574,15 @@ long-term traceability.
 7. The M4 APK baseline contains two vendor native libraries in four ABIs. All
    eight packaged `.so` entries pass `zipalign -c -P 16`, and the two arm64-v8a
    libraries have ELF `LOAD` segment `p_align = 0x4000`. CI now treats the APK
-   alignment check as blocking. The M4 gate remains pending until that guard
-   and the redefined API 26/29/33/36 matrix are green and independently
-   reviewed. On API 26-29, Android does not expose a network-specific NAT64
-   prefix; the classifier can recognize the well-known `64:ff9b::/96` prefix
-   but not a provider-specific prefix on those OS versions.
+   alignment check as blocking. That task verifies APK package alignment only;
+   a future ELF program-header guard remains assigned to M7. On API 26-29,
+   Android does not expose a network-specific NAT64 prefix; the classifier can
+   recognize the well-known `64:ff9b::/96` prefix but not a provider-specific
+   prefix on those OS versions.
+8. The redefined M4 gate passed in CI run
+   [`29649381772`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29649381772):
+   host verification and API 26/29/33/36 instrumentation passed, while the
+   explicitly non-blocking API 37 16 KB compatibility job reproduced the known
+   pre-instrumentation boot timeout. Claude Code independently reviewed the
+   evidence with no blocking findings, and the user formally released M4 on
+   2026-07-19. M5 is the active milestone.

@@ -3,11 +3,10 @@
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
 secure persistence are implemented. The M4 media input/output slice passed code
-review, but its device gate remains pending until the blocking
-API 26/29/33/36 emulator matrix and APK alignment guard pass review. The picker
-has a Compose entry point, but provider, persistence, and media outputs are not
-connected to the generation workflow yet; this is not a functional
-image-generation release.
+review and its redefined API 26/29/33/36 device gate. M5 end-to-end generation
+workflow work is in progress. The picker has a Compose entry point, but
+provider, persistence, and media outputs are not connected to the generation
+workflow yet; this is not a functional image-generation release.
 
 ## Toolchain
 
@@ -117,7 +116,9 @@ entries aligned to 16 KB in the APK, and both arm64-v8a libraries use ELF
 `LOAD` segment `p_align = 0x4000`. The blocking
 `verifyDebugApkPageAlignment` Gradle task assembles the APK and runs
 `zipalign -c -P 16` so a future dependency cannot silently regress package
-alignment. Before any tag release or application-store submission, the
+alignment. This guard does not inspect ELF program headers; M7 must add a
+blocking check for arm64 `LOAD` segments with `p_align < 0x4000`. Before any tag
+release or application-store submission, the
 repository maintainer acting as release owner must obtain a successful API 37
 16 KB instrumentation run through Firebase Test Lab or a physical 16 KB device;
 Codex records the evidence and Claude Code independently reviews it.
