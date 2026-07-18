@@ -6,9 +6,12 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+val pinnedBuildToolsVersion = "36.0.0"
+
 android {
     namespace = "io.github.ayaseminami.gnbp"
     compileSdk = 37
+    buildToolsVersion = pinnedBuildToolsVersion
 
     defaultConfig {
         applicationId = "io.github.ayaseminami.gnbp"
@@ -122,6 +125,44 @@ val verifyNetworkChokepoint by tasks.registering {
         check(violations.isEmpty()) {
             "Network construction must stay inside provider/transport:\n${violations.joinToString("\n")}"
         }
+    }
+}
+
+val verifyDebugApkPageAlignment by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verifies 16 KB page alignment for native libraries in the debug APK."
+    dependsOn("assembleDebug")
+
+    val debugApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val zipalign = androidComponents.sdkComponents.sdkDirectory.map { sdkDirectory ->
+        val executable = if (System.getProperty("os.name").startsWith("Windows")) {
+            "zipalign.exe"
+        } else {
+            "zipalign"
+        }
+        sdkDirectory.file("build-tools/$pinnedBuildToolsVersion/$executable").asFile
+    }
+
+    inputs.file(debugApk)
+
+    doFirst {
+        val zipalignFile = zipalign.get()
+        val apkFile = debugApk.get().asFile
+        check(zipalignFile.isFile) {
+            "zipalign not found at ${zipalignFile.absolutePath}"
+        }
+        check(apkFile.isFile) {
+            "Debug APK not found at ${apkFile.absolutePath}"
+        }
+        commandLine(
+            zipalignFile.absolutePath,
+            "-c",
+            "-P",
+            "16",
+            "-v",
+            "4",
+            apkFile.absolutePath,
+        )
     }
 }
 

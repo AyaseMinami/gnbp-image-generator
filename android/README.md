@@ -3,10 +3,11 @@
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
 secure persistence are implemented. The M4 media input/output slice passed code
-review, but its device gate remains pending until the API 26/29/33/37 emulator
-matrix passes. The picker has a Compose entry point, but provider, persistence,
-and media outputs are not connected to the generation workflow yet; this is not
-a functional image-generation release.
+review, but its device gate remains pending until the blocking
+API 26/29/33/36 emulator matrix and APK alignment guard pass review. The picker
+has a Compose entry point, but provider, persistence, and media outputs are not
+connected to the generation workflow yet; this is not a functional
+image-generation release.
 
 ## Toolchain
 
@@ -35,13 +36,13 @@ the AGP compatibility table.
 PowerShell:
 
 ```powershell
-.\gradlew.bat lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+.\gradlew.bat lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest
 ```
 
 Linux/macOS:
 
 ```bash
-./gradlew lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+./gradlew lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest
 ```
 
 The debug APK is generated under `app/build/outputs/apk/debug/`. Build output is
@@ -99,10 +100,27 @@ Only an allowlist of non-secret generation parameters is exported through the
 MediaStore description field.
 
 Host tests cover large images, revoked URI access, save rollback, external
-deletion, scoped/legacy values, and collision-safe names. CI runs the
-instrumentation suite on API 26, 29, 33, and 37 emulators; local execution uses
-`connectedDebugAndroidTest` with a compatible device or emulator. The
-instrumentation APK is also compiled in the normal verification build.
+deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the
+instrumentation suite on API 26, 29, 33, and 36 emulators. API 37.0 only offers
+16 KB `google_apis_ps16k` images, and the current hosted-runner/image
+combination remains offline even with KVM enabled; run
+[`29646096937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29646096937)
+captures that failure before instrumentation starts. CI therefore keeps API 37
+16 KB as a non-blocking compatibility signal instead of deleting it. Local
+execution uses `connectedDebugAndroidTest` with a compatible device or
+emulator. The instrumentation APK is also compiled in the normal verification
+build.
+
+The debug APK contains `libandroidx.graphics.path.so` and
+`libdatastore_shared_counter.so` in four ABIs. The M4 baseline has all eight
+entries aligned to 16 KB in the APK, and both arm64-v8a libraries use ELF
+`LOAD` segment `p_align = 0x4000`. The blocking
+`verifyDebugApkPageAlignment` Gradle task assembles the APK and runs
+`zipalign -c -P 16` so a future dependency cannot silently regress package
+alignment. Before any tag release or application-store submission, the
+repository maintainer acting as release owner must obtain a successful API 37
+16 KB instrumentation run through Firebase Test Lab or a physical 16 KB device;
+Codex records the evidence and Claude Code independently reviews it.
 
 Android exposes the active network's NAT64 prefix only on API 30 and newer. On
 API 26-29 the address classifier still recognizes the well-known

@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M3 slice passed review; M4 media input/output pending review
+Status: Approved; M3 slice passed review; M4 code passed review and redefined device gate pending
 Date: 2026-07-17
 
 ## 1. Objective
@@ -336,7 +336,21 @@ Exit criteria: CRUD, migration, encryption, and restart tests pass.
   repositories can supply the retained-ID set.
 
 Exit criteria: instrumentation tests cover picker results, revoked access,
-large images, save failures, and external deletion.
+large images, save failures, and external deletion. Host CI verifies 16 KB APK
+page alignment, and the blocking device matrix passes on API 26, 29, 33, and
+36.
+
+API 37.0 currently provides only `google_apis_ps16k` system images. The current
+hosted-runner/image combination remains offline even with Ubuntu KVM enabled;
+run
+[`29646096937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29646096937)
+is the reproducible evidence. Keep that API 37 16 KB job as a non-blocking
+compatibility signal until the hosted image becomes usable. Before any tag
+release or application-store submission, the repository maintainer acting as
+release owner must arrange one successful API 37 16 KB
+`connectedDebugAndroidTest` run through Firebase Test Lab or a physical 16 KB
+device. Codex records the execution evidence and Claude Code independently
+reviews it before the user approves release.
 
 ### M5 - End-To-End Generation Workflow
 
@@ -498,15 +512,18 @@ long-term traceability.
 | Gemini safety behavior conflicts with provider or store policy | Make the safety request explicit and tie it to the distribution decision |
 | Hard-coded UI language blocks part of the target audience | Choose languages in M0 and use Android string resources from M1 |
 | Desktop and Android behavior drifts | Shared fixtures, parity matrix, path-filtered tests, cross-platform review |
+| Hosted API 37 16 KB image does not boot | Keep a non-blocking compatibility signal, enforce APK alignment statically, and require FTL or physical-device evidence before release |
 | Reviewers defer to each other without evidence | Mandatory finding evidence and explicit disposition protocol |
 
 ## 14. Resolved M0 Decisions
 
 1. Application ID: `io.github.ayaseminami.gnbp`; publisher: `AyaseMinami`.
 2. `minSdk 26`; target the latest stable Android API at implementation time.
-   Test API 26, 29, 33, and the latest stable API when M4 introduces platform
-   storage behavior and again at the M6 device-matrix gate. M1 uses host-side
-   unit tests, lint, and APK assembly only.
+   The blocking hosted device matrix tests API 26, 29, 33, and 36 when M4
+   introduces platform storage behavior and again at the M6 device-matrix
+   gate. API 37 16 KB remains a non-blocking compatibility signal because its
+   only available hosted system image does not boot in the verified runner
+   combinations. M1 uses host-side unit tests, lint, and APK assembly only.
 3. Publish the first edition as a side-loaded APK on GitHub Releases. Reconsider
    Google Play and domestic stores after the reliable-release milestone.
 4. The technical preview and side-loaded MVP guarantee only foreground
@@ -545,8 +562,18 @@ long-term traceability.
    findings.
 6. M4 media input/output, API 26-28 and API 29+ MediaStore paths, bounded image
    preparation, and NAT64 discovery passed independent code review at commit
-   `61c25fd` with no blocking code findings. The M4 gate remains pending until
-   `connectedDebugAndroidTest` passes on API 26, 29, 33, and 37. On API 26-29,
-   Android does not expose a network-specific NAT64 prefix; the classifier can
-   recognize the well-known `64:ff9b::/96` prefix but not a provider-specific
-   prefix on those OS versions.
+   `61c25fd` with no blocking code findings. The user redefined the blocking M4
+   device gate as API 26, 29, 33, and 36 after API 37 16 KB stayed offline on
+   both macOS ARM and Ubuntu x86_64/KVM hosted runners. Ubuntu/KVM evidence is
+   run
+   [`29646096937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29646096937);
+   the failure happened before instrumentation tests began. API 37 remains a
+   non-blocking compatibility job rather than being removed.
+7. The M4 APK baseline contains two vendor native libraries in four ABIs. All
+   eight packaged `.so` entries pass `zipalign -c -P 16`, and the two arm64-v8a
+   libraries have ELF `LOAD` segment `p_align = 0x4000`. CI now treats the APK
+   alignment check as blocking. The M4 gate remains pending until that guard
+   and the redefined API 26/29/33/36 matrix are green and independently
+   reviewed. On API 26-29, Android does not expose a network-specific NAT64
+   prefix; the classifier can recognize the well-known `64:ff9b::/96` prefix
+   but not a provider-specific prefix on those OS versions.
