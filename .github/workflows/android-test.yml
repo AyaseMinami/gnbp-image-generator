@@ -65,4 +65,5 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          emulator-boot-timeout: 1200
           script: cd android && ./gradlew connectedDebugAndroidTest --stacktrace
