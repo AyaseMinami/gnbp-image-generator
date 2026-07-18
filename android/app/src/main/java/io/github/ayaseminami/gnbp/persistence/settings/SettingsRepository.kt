@@ -115,8 +115,10 @@ internal object SettingsKeys {
 private fun Preferences.toAppSettings(): AppSettings = AppSettings(
     selectedProfileId = this[SettingsKeys.SELECTED_PROFILE_ID]?.let(::ProfileId),
     selectedPromptId = this[SettingsKeys.SELECTED_PROMPT_ID]?.let(::PromptId),
-    batchCount = this[SettingsKeys.BATCH_COUNT] ?: AppSettings.DEFAULT_BATCH_COUNT,
-    maxConcurrency = this[SettingsKeys.MAX_CONCURRENCY] ?: AppSettings.DEFAULT_MAX_CONCURRENCY,
+    batchCount = (this[SettingsKeys.BATCH_COUNT] ?: AppSettings.DEFAULT_BATCH_COUNT)
+        .coerceIn(1, AppSettings.MAX_BATCH_COUNT),
+    maxConcurrency = (this[SettingsKeys.MAX_CONCURRENCY] ?: AppSettings.DEFAULT_MAX_CONCURRENCY)
+        .coerceIn(1, AppSettings.MAX_CONCURRENCY),
     showPreview = this[SettingsKeys.SHOW_PREVIEW] ?: AppSettings.DEFAULT_SHOW_PREVIEW,
     soundNotification = this[SettingsKeys.SOUND_NOTIFICATION] ?: AppSettings.DEFAULT_SOUND_NOTIFICATION,
 )

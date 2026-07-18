@@ -90,7 +90,10 @@ val verifyNetworkChokepoint by tasks.registering {
     doLast {
         val constructionPatterns = listOf(
             "OkHttpClient.Builder(",
+            "OkHttpClient(",
             "SSLSocketFactory",
+            "SSLContext",
+            "TrustManager",
             "HttpURLConnection",
             ".openConnection(",
             "CronetEngine.Builder(",

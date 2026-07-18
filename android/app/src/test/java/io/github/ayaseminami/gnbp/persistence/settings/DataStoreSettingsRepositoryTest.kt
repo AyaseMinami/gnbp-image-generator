@@ -93,6 +93,30 @@ class DataStoreSettingsRepositoryTest {
         assertEquals(AppSettings.DEFAULT_SOUND_NOTIFICATION, migrated.soundNotification)
         migratedJob.cancelAndJoin()
     }
+
+    @Test
+    fun `out of range persisted values are clamped instead of terminating the settings flow`() = runTest {
+        val storage = InMemoryPreferencesStorage(
+            mutablePreferencesOf(
+                SettingsKeys.SCHEMA_VERSION to SettingsDataMigration.CURRENT_SCHEMA_VERSION,
+                SettingsKeys.BATCH_COUNT to Int.MAX_VALUE,
+                SettingsKeys.MAX_CONCURRENCY to 0,
+            ),
+        )
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val store = DataStoreFactory.create(
+            storage = storage,
+            scope = scope,
+            migrations = listOf(SettingsDataMigration()),
+        )
+
+        val settings = DataStoreSettingsRepository(store).observeSettings().first()
+
+        assertEquals(AppSettings.MAX_BATCH_COUNT, settings.batchCount)
+        assertEquals(1, settings.maxConcurrency)
+        job.cancelAndJoin()
+    }
 }
 
 private class InMemoryPreferencesStorage(
