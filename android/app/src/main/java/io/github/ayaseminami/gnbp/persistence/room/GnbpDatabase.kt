@@ -6,14 +6,16 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ProfileEntity::class, PromptEntity::class],
-    version = 2,
+    entities = [ProfileEntity::class, PromptEntity::class, GenerationTaskEntity::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class GnbpDatabase : RoomDatabase() {
     internal abstract fun profileDao(): ProfileDao
 
     internal abstract fun promptDao(): PromptDao
+
+    internal abstract fun taskDao(): GenerationTaskDao
 
     companion object {
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
@@ -45,6 +47,27 @@ abstract class GnbpDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN ack_mode TEXT")
                 db.execSQL("ALTER TABLE profiles ADD COLUMN ack_policy_revision INTEGER")
                 db.execSQL("ALTER TABLE profiles ADD COLUMN ack_accepted_at INTEGER")
+            }
+        }
+
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS generation_tasks (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "request_json TEXT NOT NULL, " +
+                        "status TEXT NOT NULL, " +
+                        "created_at INTEGER NOT NULL, " +
+                        "started_at INTEGER, " +
+                        "finished_at INTEGER, " +
+                        "source_task_id TEXT, " +
+                        "terminal_reason TEXT, " +
+                        "result_asset_id TEXT, " +
+                        "result_uri TEXT, " +
+                        "result_display_name TEXT, " +
+                        "result_mime_type TEXT, " +
+                        "result_byte_size INTEGER)",
+                )
             }
         }
     }

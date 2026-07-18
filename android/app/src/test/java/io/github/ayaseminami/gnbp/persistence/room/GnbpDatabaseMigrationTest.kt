@@ -36,7 +36,7 @@ class GnbpDatabaseMigrationTest {
         createVersionOneDatabase(context, databaseName, encrypted.version, encrypted.iv, encrypted.ciphertext)
 
         val database = Room.databaseBuilder(context, GnbpDatabase::class.java, databaseName)
-            .addMigrations(GnbpDatabase.MIGRATION_1_2)
+            .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
         val profile = RoomProfileRepository(database.profileDao(), cipher)
@@ -54,6 +54,7 @@ class GnbpDatabaseMigrationTest {
         )
         assertEquals("Legacy prompt", prompt?.name)
         assertEquals("preserved content", prompt?.content)
+        assertTrue(database.taskDao().findAll().isEmpty())
 
         database.close()
         context.deleteDatabase(databaseName)

@@ -586,3 +586,9 @@ long-term traceability.
    pre-instrumentation boot timeout. Claude Code independently reviewed the
    evidence with no blocking findings, and the user formally released M4 on
    2026-07-19. M5 is the active milestone.
+9. The first M5 generation-workflow slice now provides the `GenerationEngine`,
+   Room task persistence/migration `2 -> 3`, immutable reference preparation,
+   cancellation/retry/`OutcomeUnknown` transitions, and Generate/Tasks Compose
+   screens with an offline fake-provider instrumentation workflow. The slice
+   is pending independent code review and device CI; profile editing remains in
+   M6 and reliable background execution remains in M7.

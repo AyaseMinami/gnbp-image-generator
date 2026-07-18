@@ -4,6 +4,10 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +24,7 @@ class ReferenceDraftViewModel(
 ) : AndroidViewModel(application) {
     private val referenceStore = ContentUriReferenceStore.create(application)
     private val owner = ReferenceDraftOwner(referenceStore::delete)
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val state: StateFlow<ReferenceDraftState> = owner.state
 
     fun importPickedUris(uris: List<Uri>) {
@@ -29,10 +34,18 @@ class ReferenceDraftViewModel(
         }
     }
 
-    fun remove(assetId: MediaAssetId): Boolean = owner.remove(assetId)
+    fun remove(assetId: MediaAssetId) {
+        viewModelScope.launch(Dispatchers.IO) { owner.remove(assetId) }
+    }
+
+    fun transferAssets(assetIds: Set<MediaAssetId>): List<DurableReferenceAsset> =
+        owner.transferAssets(assetIds)
 
     override fun onCleared() {
-        owner.clear()
+        val abandonedAssets = owner.transferAssets()
+        cleanupScope.launch {
+            abandonedAssets.forEach(referenceStore::delete)
+        }.invokeOnCompletion { cleanupScope.cancel() }
         super.onCleared()
     }
 }
@@ -68,5 +81,15 @@ internal class ReferenceDraftOwner(
     fun clear() {
         mutableState.value.assets.forEach { asset -> deleteAsset(asset) }
         mutableState.value = ReferenceDraftState()
+    }
+
+    fun transferAssets(
+        assetIds: Set<MediaAssetId> = mutableState.value.assets.mapTo(mutableSetOf()) { it.id },
+    ): List<DurableReferenceAsset> {
+        val assets = mutableState.value.assets.filter { it.id in assetIds }
+        mutableState.update { current ->
+            current.copy(assets = current.assets.filterNot { it.id in assetIds })
+        }
+        return assets
     }
 }

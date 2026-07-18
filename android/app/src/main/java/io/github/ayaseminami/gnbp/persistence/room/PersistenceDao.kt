@@ -34,3 +34,21 @@ internal interface PromptDao {
     @Query("DELETE FROM prompts WHERE id = :id")
     suspend fun deleteById(id: String): Int
 }
+
+@Dao
+internal interface GenerationTaskDao {
+    @Query("SELECT * FROM generation_tasks ORDER BY created_at DESC, id DESC")
+    fun observeAll(): Flow<List<GenerationTaskEntity>>
+
+    @Query("SELECT * FROM generation_tasks ORDER BY created_at DESC, id DESC")
+    suspend fun findAll(): List<GenerationTaskEntity>
+
+    @Query("SELECT * FROM generation_tasks WHERE id = :id")
+    suspend fun findById(id: String): GenerationTaskEntity?
+
+    @Upsert
+    suspend fun upsertAll(tasks: List<GenerationTaskEntity>)
+
+    @Upsert
+    suspend fun upsert(task: GenerationTaskEntity)
+}

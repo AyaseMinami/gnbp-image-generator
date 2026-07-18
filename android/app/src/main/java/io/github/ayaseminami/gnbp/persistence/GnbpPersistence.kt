@@ -14,6 +14,8 @@ import io.github.ayaseminami.gnbp.persistence.secret.AndroidKeystoreSecretKeyPro
 import io.github.ayaseminami.gnbp.persistence.settings.DataStoreSettingsRepository
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsDataMigration
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
+import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
+import io.github.ayaseminami.gnbp.persistence.task.RoomGenerationTaskRepository
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,7 @@ class GnbpPersistence private constructor(
     val profiles: ProfileRepository,
     val prompts: PromptRepository,
     val settings: SettingsRepository,
+    val tasks: GenerationTaskRepository,
 ) : Closeable {
     override fun close() {
         scope.cancel()
@@ -41,7 +44,7 @@ class GnbpPersistence private constructor(
                 GnbpDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(GnbpDatabase.MIGRATION_1_2)
+                .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
                 .build()
             val cipher = AesGcmSecretCipher(AndroidKeystoreSecretKeyProvider())
             val dataStore = PreferenceDataStoreFactory.create(
@@ -55,6 +58,7 @@ class GnbpPersistence private constructor(
                 profiles = RoomProfileRepository(database.profileDao(), cipher),
                 prompts = RoomPromptRepository(database.promptDao()),
                 settings = DataStoreSettingsRepository(dataStore),
+                tasks = RoomGenerationTaskRepository(database.taskDao()),
             )
         }
 

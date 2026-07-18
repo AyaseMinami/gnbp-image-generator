@@ -98,6 +98,23 @@ provide preview/share intents and can be copied back into the reference store.
 Only an allowlist of non-secret generation parameters is exported through the
 MediaStore description field.
 
+## Generation Workflow (M5)
+
+The first M5 slice connects the Generate and Tasks Compose screens to a
+foreground `GenerationEngine`. It expands immutable batch snapshots, prepares
+references off the main thread, enforces the saved concurrency limit, supports
+queued and active cancellation, and requires explicit retry. A request whose
+delivery may be uncertain becomes `OutcomeUnknown`; it is never retried
+automatically. Task state is persisted in Room and startup changes interrupted
+`Running` tasks to `OutcomeUnknown` without issuing a new request. The engine's
+provider and asset-store seams have offline fakes, including a Compose
+instrumentation workflow test.
+
+The Generate screen currently consumes profiles persisted by M3. Profile
+creation and advanced security editing remain part of M6 Settings; until a
+profile exists, submission is intentionally disabled. The reliable background
+execution and notification guarantees remain assigned to M7.
+
 Host tests cover large images, revoked URI access, save rollback, external
 deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the
 instrumentation suite on API 26, 29, 33, and 36 emulators. API 37.0 only offers

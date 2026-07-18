@@ -52,3 +52,25 @@ internal data class PromptEntity(
     override fun toString(): String =
         "PromptEntity(id=[REDACTED], name=[REDACTED], content=[REDACTED], sortOrder=$sortOrder)"
 }
+
+@Entity(tableName = "generation_tasks")
+internal data class GenerationTaskEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "request_json") val requestJson: String,
+    val status: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "started_at") val startedAt: Long?,
+    @ColumnInfo(name = "finished_at") val finishedAt: Long?,
+    @ColumnInfo(name = "source_task_id") val sourceTaskId: String?,
+    @ColumnInfo(name = "terminal_reason") val terminalReason: String?,
+    @ColumnInfo(name = "result_asset_id") val resultAssetId: String?,
+    @ColumnInfo(name = "result_uri") val resultUri: String?,
+    @ColumnInfo(name = "result_display_name") val resultDisplayName: String?,
+    @ColumnInfo(name = "result_mime_type") val resultMimeType: String?,
+    @ColumnInfo(name = "result_byte_size") val resultByteSize: Long?,
+) {
+    override fun toString(): String =
+        "GenerationTaskEntity(id=[REDACTED], request=[REDACTED], status=$status, " +
+            "timestamps=[REDACTED], sourceTaskId=[REDACTED], terminalReason=$terminalReason, " +
+            "result=[REDACTED])"
+}
