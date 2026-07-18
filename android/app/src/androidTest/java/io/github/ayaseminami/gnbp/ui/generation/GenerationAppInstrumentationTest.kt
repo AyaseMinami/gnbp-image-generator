@@ -10,7 +10,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -26,6 +25,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
 import io.github.ayaseminami.gnbp.generation.OfflineFakeImageGenerationProvider
 import io.github.ayaseminami.gnbp.generation.ReferencePreparer
 import io.github.ayaseminami.gnbp.generation.TaskId
+import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
@@ -41,6 +41,7 @@ import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.ProviderEndpoint
 import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -68,7 +69,7 @@ class GenerationAppInstrumentationTest {
         val profile = profile()
         val repository = InstrumentedTaskRepository()
         val fakeImage = GeneratedImage(byteArrayOf(1, 2, 3), "image/png")
-        var accepted = false
+        val enqueueResult = AtomicReference<EnqueueResult?>()
 
         compose.setContent {
             val scope = rememberCoroutineScope()
@@ -129,7 +130,7 @@ class GenerationAppInstrumentationTest {
                                 parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
                             ),
                         )
-                        accepted = result is EnqueueResult.Accepted
+                        enqueueResult.set(result)
                     }
                 },
                 onCancelTask = {},
@@ -143,13 +144,14 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.enqueue_generation))
             .assertIsEnabled()
             .performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { enqueueResult.get() != null }
+        assertTrue(enqueueResult.get() is EnqueueResult.Accepted)
+        compose.waitUntil(timeoutMillis = 10_000) { repository.hasTerminalTask() }
+        assertTrue(repository.tasksSnapshot().single().status is TaskStatus.Succeeded)
+
         compose.onNodeWithText(context.getString(R.string.tab_tasks)).performClick()
         val completed = context.getString(R.string.task_status_succeeded)
-        compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithText(completed).fetchSemanticsNodes().isNotEmpty()
-        }
-
-        assertTrue(accepted)
+        compose.onNodeWithText(completed).assertExists()
         compose.onNodeWithText("lighthouse").assertExists()
     }
 }
@@ -171,6 +173,12 @@ private class InstrumentedTaskRepository : GenerationTaskRepository {
     override suspend fun updateTask(task: GenerationTask) {
         tasks.value = tasks.value.map { current -> if (current.id == task.id) task else current }
     }
+
+    fun hasTerminalTask(): Boolean = tasks.value.any { task ->
+        task.status !is TaskStatus.Queued && task.status !is TaskStatus.Running
+    }
+
+    fun tasksSnapshot(): List<GenerationTask> = tasks.value
 }
 
 private class InstrumentedAssetStore : GeneratedAssetStore {
