@@ -50,11 +50,11 @@ jobs:
             target: default
             runner: ubuntu-latest
             arch: x86_64
-          # The API 37 16 KB image needs hardware acceleration on hosted CI.
+          # Use Ubuntu KVM for the API 37 16 KB x86_64 image.
           - api-level: "37.0"
             target: google_apis_ps16k
-            runner: macos-14
-            arch: arm64-v8a
+            runner: ubuntu-latest
+            arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
