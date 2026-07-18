@@ -80,6 +80,7 @@ class GenerationAppInstrumentationTest {
                     },
                     generatedAssetStore = InstrumentedAssetStore(),
                     referencePreparer = ReferencePreparer { error("No references expected") },
+                    profileLoader = { profile },
                     maxConcurrency = 1,
                     externalScope = scope,
                     idGenerator = { "fake-workflow-task" },
@@ -123,7 +124,7 @@ class GenerationAppInstrumentationTest {
                     scope.launch {
                         val result = createdEngine.enqueue(
                             GenerationBatchRequest(
-                                profile = profile,
+                                profileId = profile.id,
                                 prompt = state.prompt,
                                 parameters = GenerationParameters.Gemini("3:4", "2K", 0.9),
                             ),

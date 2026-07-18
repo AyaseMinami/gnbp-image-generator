@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import io.github.ayaseminami.gnbp.generation.ReferenceAssetInput
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -129,6 +130,20 @@ class ContentUriReferenceStore(
 
     fun delete(asset: DurableReferenceAsset): Boolean =
         if (asset.file.isInside(rootDirectory)) asset.file.delete() else false
+
+    fun resolve(input: ReferenceAssetInput): DurableReferenceAsset? {
+        val file = File(rootDirectory, "${input.id}.input")
+        return if (file.isFile && file.isInside(rootDirectory)) {
+            DurableReferenceAsset(
+                id = MediaAssetId(input.id),
+                file = file,
+                displayName = input.displayName,
+                mimeType = input.mimeType,
+            )
+        } else {
+            null
+        }
+    }
 
     fun cleanupOrphanedCopies(
         retainedAssetIds: Set<MediaAssetId>,

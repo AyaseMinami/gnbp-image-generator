@@ -1,6 +1,7 @@
 package io.github.ayaseminami.gnbp.persistence.task
 
-import androidx.core.net.toUri
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
+import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
 import io.github.ayaseminami.gnbp.generation.ReferenceAssetSnapshot
@@ -10,9 +11,6 @@ import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
-import io.github.ayaseminami.gnbp.media.AssetRef
-import io.github.ayaseminami.gnbp.media.MediaAssetId
-import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskDao
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskEntity
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
@@ -68,8 +66,8 @@ class RoomGenerationTaskRepository internal constructor(
             finishedAt = finishedAtEpochMillis,
             sourceTaskId = sourceTaskId?.value,
             terminalReason = terminalReason,
-            resultAssetId = asset?.id?.value,
-            resultUri = asset?.uri?.toString(),
+            resultAssetId = asset?.id,
+            resultUri = asset?.location,
             resultDisplayName = asset?.displayName,
             resultMimeType = asset?.mimeType,
             resultByteSize = asset?.byteSize,
@@ -82,9 +80,9 @@ class RoomGenerationTaskRepository internal constructor(
             "QUEUED" -> TaskStatus.Queued
             "RUNNING" -> TaskStatus.Running
             "SUCCEEDED" -> TaskStatus.Succeeded(
-                AssetRef(
-                    id = MediaAssetId(requireNotNull(resultAssetId)),
-                    uri = requireNotNull(resultUri).toUri(),
+                GeneratedAssetReference(
+                    id = requireNotNull(resultAssetId),
+                    location = requireNotNull(resultUri),
                     displayName = requireNotNull(resultDisplayName),
                     mimeType = requireNotNull(resultMimeType),
                     byteSize = requireNotNull(resultByteSize),
@@ -126,7 +124,7 @@ private data class PersistedTaskRequest(
     fun toDomain(): TaskRequestSnapshot = TaskRequestSnapshot(
         profileId = ProfileId(profileId),
         profileName = profileName,
-        providerKind = ProviderKind.valueOf(providerKind),
+        providerKind = GenerationProviderKind.valueOf(providerKind),
         model = model,
         prompt = prompt,
         parameters = parameters.toDomain(),
@@ -164,7 +162,7 @@ private data class PersistedReferenceAsset(
     val mimeType: String,
 ) {
     fun toDomain(): ReferenceAssetSnapshot = ReferenceAssetSnapshot(
-        id = MediaAssetId(id),
+        id = id,
         displayName = displayName,
         mimeType = mimeType,
     )
@@ -191,7 +189,7 @@ private fun TaskRequestSnapshot.toPersisted() = PersistedTaskRequest(
     },
     references = references.map { reference ->
         PersistedReferenceAsset(
-            id = reference.id.value,
+            id = reference.id,
             displayName = reference.displayName,
             mimeType = reference.mimeType,
         )

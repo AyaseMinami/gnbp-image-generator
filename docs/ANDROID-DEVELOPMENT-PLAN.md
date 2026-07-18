@@ -364,6 +364,11 @@ reviews it before the user approves release.
 - perform draft removal and cleanup file I/O off the main thread;
 - on startup, reconcile any task left in `Running` as `OutcomeUnknown` and never
   retry it automatically, even in the foreground-only MVP;
+- keep safe `Queued` work queued across restart and rebuild its execution
+  snapshot from persisted request metadata, the current encrypted profile, and
+  app-owned reference copies; use the same rebuild path for explicit retry;
+- keep the public `GenerationEngine` contract product-level: no Android `Uri`,
+  `File`, persistence entity, or secret-bearing profile objects;
 - connect real adapters only after fake-driven workflow tests pass.
 
 Exit criteria: a complete fake-provider workflow passes UI tests, followed by a
@@ -589,6 +594,9 @@ long-term traceability.
 9. The first M5 generation-workflow slice now provides the `GenerationEngine`,
    Room task persistence/migration `2 -> 3`, immutable reference preparation,
    cancellation/retry/`OutcomeUnknown` transitions, and Generate/Tasks Compose
-   screens with an offline fake-provider instrumentation workflow. The slice
+   screens with an offline fake-provider instrumentation workflow. Follow-up
+   hardening keeps the engine contract free of Android/persistence types,
+   resumes safe queued work after restart, and enables explicit retry from only
+   persisted task metadata plus current profile/reference adapters. The slice
    is pending independent code review and device CI; profile editing remains in
    M6 and reliable background execution remains in M7.

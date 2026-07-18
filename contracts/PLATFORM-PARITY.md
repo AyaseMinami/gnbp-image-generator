@@ -12,8 +12,8 @@ the first M5 generation-workflow slice.
 | GPT JSON generation | `core/gpt_client.py` | `openai/generation-success.json` | Implemented M2; slice review passed |
 | GPT multipart edit with references | `core/gpt_client.py` | Same response contract as generation | Implemented M2; slice review passed |
 | GPT provider error response | `core/gpt_client.py` | `openai/error.json` | Implemented M2; slice review passed |
-| Immutable batch task snapshot | `ui/main_window.py`, `core/task_queue.py` | Development plan Section 7 | Implemented M5 engine slice; independent review pending |
-| Queue state and `OutcomeUnknown` | `core/task_queue.py` plus Android extension | Development plan Section 6 | Implemented M5 engine + Room task state; device UI test pending |
+| Immutable batch task snapshot | `ui/main_window.py`, `core/task_queue.py` | Development plan Section 7 | Implemented M5 engine; queued/retry snapshots rebuild from persisted summaries and durable adapters; independent review pending |
+| Queue state and `OutcomeUnknown` | `core/task_queue.py` plus Android extension | Development plan Section 6 | Implemented M5 engine + Room task state; running work becomes `OutcomeUnknown`, safe queued work resumes; device UI test pending |
 | Reference resize to 1536/JPEG 85 | `core/utils.py` | Development plan Section 7 | Implemented M4; gate passed |
 | Collision-safe result identity | `core/utils.py` | Development plan Section 7 | Implemented M4; gate passed |
 | Key/path metadata sanitization | `core/utils.py` | Development plan Section 7 | Implemented M4 allowlist; PNG `tEXt` parity later |

@@ -4,7 +4,6 @@ import android.net.Uri
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
-import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.GeneratedAssetStore
 import io.github.ayaseminami.gnbp.media.ImagePreparationResult
@@ -26,7 +25,6 @@ import io.github.ayaseminami.gnbp.provider.transport.TransportFailure
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.ProviderEndpoint
 import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
-import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -68,6 +66,7 @@ class GenerationEngineTest {
                     height = 20,
                 )
             },
+            profileLoader = { geminiProfile() },
             maxConcurrency = 2,
             externalScope = backgroundScope,
             workerDispatcher = UnconfinedTestDispatcher(testScheduler),
@@ -77,7 +76,7 @@ class GenerationEngineTest {
         try {
             val result = engine.enqueue(
                 GenerationBatchRequest(
-                    profile = geminiProfile(),
+                    profileId = geminiProfile().id,
                     prompt = "draw a lighthouse",
                     parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
                     references = listOf(referenceAsset("reference-one")),
@@ -220,7 +219,7 @@ class GenerationEngineTest {
     }
 
     @Test
-    fun `startup reconciles interrupted tasks without issuing requests`() = runTest {
+    fun `startup reconciles running tasks and resumes queued tasks`() = runTest {
         val request = taskRequestSnapshot()
         val repository = InMemoryTaskRepository(
             listOf(
@@ -239,7 +238,9 @@ class GenerationEngineTest {
                 ),
             ),
         )
-        val provider = SequenceProvider(emptyList())
+        val provider = SequenceProvider(
+            listOf(ImageGenerationResult.Success(GeneratedImage(byteArrayOf(1), "image/png"))),
+        )
         val engine = engine(
             repository = repository,
             provider = provider,
@@ -249,17 +250,88 @@ class GenerationEngineTest {
         )
         try {
             val reconciled = engine.observeTasks().first { tasks ->
-                tasks.none { it.status is TaskStatus.Running || it.status is TaskStatus.Queued }
+                tasks.singleOrNull { it.id == TaskId("was-running") }?.status is TaskStatus.OutcomeUnknown &&
+                    tasks.singleOrNull { it.id == TaskId("was-queued") }?.status is TaskStatus.Succeeded
             }
             assertEquals(
                 TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProcessInterrupted),
                 reconciled.single { it.id == TaskId("was-running") }.status,
             )
+            assertTrue(reconciled.single { it.id == TaskId("was-queued") }.status is TaskStatus.Succeeded)
+            assertEquals(1, provider.callCount.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `explicit retry rebuilds a persisted task after restart`() = runTest {
+        val sourceId = TaskId("failed-before-restart")
+        val request = taskRequestSnapshot().copy(
+            model = "persisted-model",
+            references = listOf(
+                ReferenceAssetSnapshot(
+                    id = "durable-reference",
+                    displayName = "reference.jpg",
+                    mimeType = "image/jpeg",
+                ),
+            ),
+        )
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = sourceId,
+                    request = request,
+                    status = TaskStatus.Failed(TaskFailureReason.Transport),
+                    createdAtEpochMillis = 100L,
+                    finishedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val provider = RecordingSuccessProvider()
+        val preparedIds = mutableListOf<String>()
+        val engine = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory { provider },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = ReferencePreparer { reference ->
+                preparedIds += reference.id
+                ImagePreparationResult.Prepared(
+                    reference = ReferenceImage(
+                        bytes = byteArrayOf(4, 5, 6),
+                        mimeType = reference.mimeType,
+                        displayName = reference.displayName,
+                    ),
+                    width = 12,
+                    height = 12,
+                )
+            },
+            profileLoader = { geminiProfile(model = "current-profile-model") },
+            maxConcurrency = 1,
+            externalScope = backgroundScope,
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+            idGenerator = { "retry-after-restart" },
+        )
+        try {
             assertEquals(
-                TaskStatus.Cancelled(TaskCancellationReason.ProcessInterruptedBeforeStart),
-                reconciled.single { it.id == TaskId("was-queued") }.status,
+                RetryResult.Enqueued(TaskId("retry-after-restart")),
+                engine.retry(sourceId),
             )
-            assertEquals(0, provider.callCount.get())
+            val completed = engine.observeTasks().first { tasks ->
+                tasks.any { task ->
+                    task.id == TaskId("retry-after-restart") &&
+                        task.status is TaskStatus.Succeeded
+                }
+            }
+            val retried = completed.single { it.id == TaskId("retry-after-restart") }
+            assertEquals(sourceId, retried.sourceTaskId)
+            assertEquals(listOf("durable-reference"), preparedIds)
+            val replayedRequest = provider.requests.receive()
+            assertEquals("persisted-model", replayedRequest.model)
+            assertArrayEquals(
+                byteArrayOf(4, 5, 6),
+                replayedRequest.referenceImages.single().bytes,
+            )
         } finally {
             engine.close()
         }
@@ -330,6 +402,7 @@ class GenerationEngineTest {
         providerFactory = GenerationProviderFactory { provider },
         generatedAssetStore = assetStore,
         referencePreparer = ReferencePreparer { error("No references expected") },
+        profileLoader = { geminiProfile() },
         maxConcurrency = maxConcurrency,
         externalScope = backgroundScope,
         workerDispatcher = UnconfinedTestDispatcher(testScheduler),
@@ -383,6 +456,18 @@ private class SequenceProvider(
     ): ImageGenerationResult {
         callCount.incrementAndGet()
         return remaining.removeFirst()
+    }
+}
+
+private class RecordingSuccessProvider : ImageGenerationProvider {
+    val requests = Channel<ImageGenerationRequest>(Channel.UNLIMITED)
+
+    override suspend fun generate(
+        request: ImageGenerationRequest,
+        cancellation: GenerationCancellation,
+    ): ImageGenerationResult {
+        requests.send(request)
+        return ImageGenerationResult.Success(GeneratedImage(byteArrayOf(1), "image/png"))
     }
 }
 
@@ -460,7 +545,7 @@ private class InMemoryTaskRepository(
     }
 }
 
-private fun geminiProfile(): ProviderProfile {
+private fun geminiProfile(model: String = "gemini-test"): ProviderProfile {
     val id = ProfileId("profile-one")
     return ProviderProfile(
         id = id,
@@ -471,20 +556,19 @@ private fun geminiProfile(): ProviderProfile {
             endpoint = ProviderEndpoint.parse("https://example.invalid/relay/"),
         ),
         apiKey = ApiKey("test-key"),
-        model = "gemini-test",
+        model = model,
         sortOrder = 0,
     )
 }
 
-private fun referenceAsset(id: String) = DurableReferenceAsset(
-    id = MediaAssetId(id),
-    file = File("$id.input"),
+private fun referenceAsset(id: String) = ReferenceAssetInput(
+    id = id,
     displayName = "reference.jpg",
     mimeType = "image/jpeg",
 )
 
 private fun batchRequest(count: Int = 1) = GenerationBatchRequest(
-    profile = geminiProfile(),
+    profileId = geminiProfile().id,
     prompt = "draw a lighthouse",
     parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
     count = count,
@@ -493,7 +577,7 @@ private fun batchRequest(count: Int = 1) = GenerationBatchRequest(
 private fun taskRequestSnapshot() = TaskRequestSnapshot(
     profileId = ProfileId("profile-one"),
     profileName = "Gemini",
-    providerKind = ProviderKind.Gemini,
+    providerKind = GenerationProviderKind.Gemini,
     model = "gemini-test",
     prompt = "draw a lighthouse",
     parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),

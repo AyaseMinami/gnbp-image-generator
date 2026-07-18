@@ -4,9 +4,10 @@ This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
 secure persistence are implemented. The M4 media input/output slice passed code
 review and its redefined API 26/29/33/36 device gate. M5 end-to-end generation
-workflow work is in progress. The picker has a Compose entry point, but
-provider, persistence, and media outputs are not connected to the generation
-workflow yet; this is not a functional image-generation release.
+workflow work is in progress. The Generate and Tasks screens now connect
+persisted profiles, production providers, durable references, and MediaStore
+outputs, but profile editing and release hardening are still incomplete; this
+is not a supported image-generation release.
 
 ## Toolchain
 
@@ -106,9 +107,14 @@ references off the main thread, enforces the saved concurrency limit, supports
 queued and active cancellation, and requires explicit retry. A request whose
 delivery may be uncertain becomes `OutcomeUnknown`; it is never retried
 automatically. Task state is persisted in Room and startup changes interrupted
-`Running` tasks to `OutcomeUnknown` without issuing a new request. The engine's
-provider and asset-store seams have offline fakes, including a Compose
-instrumentation workflow test.
+`Running` tasks to `OutcomeUnknown` without issuing a new request. Safe
+`Queued` tasks rebuild their execution snapshot from the persisted request,
+current encrypted profile, and app-owned reference copies before resuming.
+Explicit retry uses the same rebuild path after process restart; it never
+retries `OutcomeUnknown` automatically. The public engine contract contains
+product-level IDs and asset references rather than Android `Uri`, `File`, or
+profile-persistence objects. The engine's provider and asset-store seams have
+offline fakes, including a Compose instrumentation workflow test.
 
 The Generate screen currently consumes profiles persisted by M3. Profile
 creation and advanced security editing remain part of M6 Settings; until a

@@ -1,18 +1,16 @@
 package io.github.ayaseminami.gnbp.persistence.task
 
 import android.content.Context
-import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.github.ayaseminami.gnbp.generation.GenerationTask
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
+import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
 import io.github.ayaseminami.gnbp.generation.ReferenceAssetSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskFailureReason
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
-import io.github.ayaseminami.gnbp.media.AssetRef
-import io.github.ayaseminami.gnbp.media.MediaAssetId
-import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.room.GnbpDatabase
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
@@ -37,9 +35,9 @@ class RoomGenerationTaskRepositoryTest {
         val succeeded = generationTask(
             "succeeded",
             TaskStatus.Succeeded(
-                AssetRef(
-                    id = MediaAssetId("result-one"),
-                    uri = Uri.parse("content://media/result-one"),
+                GeneratedAssetReference(
+                    id = "result-one",
+                    location = "content://media/result-one",
                     displayName = "result-one.png",
                     mimeType = "image/png",
                     byteSize = 3,
@@ -115,13 +113,13 @@ private fun generationTask(id: String, status: TaskStatus) = GenerationTask(
     request = TaskRequestSnapshot(
         profileId = ProfileId("profile-one"),
         profileName = "Profile One",
-        providerKind = ProviderKind.Gemini,
+        providerKind = GenerationProviderKind.Gemini,
         model = "gemini-test",
         prompt = "private prompt",
         parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
         references = listOf(
             ReferenceAssetSnapshot(
-                id = MediaAssetId("reference-one"),
+                id = "reference-one",
                 displayName = "reference-private.jpg",
                 mimeType = "image/jpeg",
             ),

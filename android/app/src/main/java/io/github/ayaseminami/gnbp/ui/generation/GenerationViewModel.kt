@@ -16,12 +16,16 @@ import io.github.ayaseminami.gnbp.generation.EnqueueResult
 import io.github.ayaseminami.gnbp.generation.GenerationBatchRequest
 import io.github.ayaseminami.gnbp.generation.GenerationEngine
 import io.github.ayaseminami.gnbp.generation.GenerationTask
+import io.github.ayaseminami.gnbp.generation.ReferenceAssetInput
 import io.github.ayaseminami.gnbp.generation.ReferencePreparer
 import io.github.ayaseminami.gnbp.generation.RetryResult
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.media.BoundedImagePreparer
 import io.github.ayaseminami.gnbp.media.ContentUriReferenceStore
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
+import io.github.ayaseminami.gnbp.media.ImagePreparationFailure
+import io.github.ayaseminami.gnbp.media.ImagePreparationResult
+import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.media.MediaStoreGeneratedAssetStore
 import io.github.ayaseminami.gnbp.persistence.GnbpPersistence
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
@@ -191,10 +195,16 @@ class GenerationViewModel(
             val result = try {
                 engineReady.await().enqueue(
                     GenerationBatchRequest(
-                        profile = profile,
+                        profileId = profile.id,
                         prompt = form.prompt,
                         parameters = parameters,
-                        references = references,
+                        references = references.map { asset ->
+                            ReferenceAssetInput(
+                                id = asset.id.value,
+                                displayName = asset.displayName,
+                                mimeType = asset.mimeType,
+                            )
+                        },
                         count = form.batchCount,
                     ),
                 )
@@ -289,7 +299,7 @@ class GenerationViewModel(
             }
             val retainedAssetIds = persistence.tasks.loadTasks()
                 .flatMap { task -> task.request.references }
-                .map { reference -> reference.id }
+                .map { reference -> MediaAssetId(reference.id) }
                 .toSet()
             withContext(Dispatchers.IO) {
                 referenceStore.cleanupOrphanedCopies(retainedAssetIds, System.currentTimeMillis())
@@ -299,7 +309,17 @@ class GenerationViewModel(
                 providerFactory = AndroidGenerationProviderFactory(application),
                 generatedAssetStore = MediaStoreGeneratedAssetStore.create(application),
                 referencePreparer = ReferencePreparer { asset ->
-                    asset.asReferenceImage(BoundedImagePreparer())
+                    val durable = referenceStore.resolve(asset)
+                        ?: return@ReferencePreparer ImagePreparationResult.Failed(
+                            ImagePreparationFailure.SourceMissing,
+                        )
+                    durable.asReferenceImage(BoundedImagePreparer())
+                },
+                profileLoader = { profileId ->
+                    when (val loaded = persistence.profiles.loadProfile(profileId)) {
+                        is ProfileLoadResult.Found -> loaded.profile
+                        else -> null
+                    }
                 },
                 maxConcurrency = currentSettings.maxConcurrency,
                 externalScope = viewModelScope,
@@ -337,6 +357,7 @@ private fun requiredPermission(
 }
 
 private fun EnqueueFailureReason.toFeedback(): GenerationFeedback = when (this) {
+    EnqueueFailureReason.ProfileUnavailable -> GenerationFeedback.ProfileUnavailable
     EnqueueFailureReason.BlankPrompt -> GenerationFeedback.BlankPrompt
     EnqueueFailureReason.InvalidBatchCount,
     EnqueueFailureReason.ParameterMismatch,

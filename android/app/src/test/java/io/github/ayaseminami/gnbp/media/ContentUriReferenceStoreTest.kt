@@ -3,6 +3,7 @@ package io.github.ayaseminami.gnbp.media
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import io.github.ayaseminami.gnbp.generation.ReferenceAssetInput
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -53,6 +54,16 @@ class ContentUriReferenceStoreTest {
         imported as ReferenceImportResult.Imported
         assertEquals("reference.png", imported.asset.displayName)
         assertTrue(imported.asset.file.isFile)
+        assertEquals(
+            imported.asset,
+            store.resolve(
+                ReferenceAssetInput(
+                    id = imported.asset.id.value,
+                    displayName = imported.asset.displayName,
+                    mimeType = imported.asset.mimeType,
+                ),
+            ),
+        )
         assertFalse(imported.asset.toString().contains("private"))
         assertTrue(imported.asset.asReferenceImage(BoundedImagePreparer()) is ImagePreparationResult.Prepared)
         val prepared = imported.asset.asReferenceImage(BoundedImagePreparer()) as ImagePreparationResult.Prepared

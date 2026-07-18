@@ -64,7 +64,7 @@ import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
-import io.github.ayaseminami.gnbp.media.AssetRef
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
@@ -98,7 +98,7 @@ fun GenerationApp(
     onSubmit: () -> Unit,
     onCancelTask: (TaskId) -> Unit,
     onRetryTask: (TaskId) -> Unit,
-    onOpenResult: (AssetRef) -> Unit,
+    onOpenResult: (GeneratedAssetReference) -> Unit,
     onFeedbackShown: () -> Unit,
 ) {
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.Generate.name) }
@@ -412,7 +412,7 @@ private fun TasksScreen(
     tasks: List<GenerationTask>,
     onCancelTask: (TaskId) -> Unit,
     onRetryTask: (TaskId) -> Unit,
-    onOpenResult: (AssetRef) -> Unit,
+    onOpenResult: (GeneratedAssetReference) -> Unit,
 ) {
     var uncertainRetryTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     if (tasks.isEmpty()) {
@@ -468,7 +468,7 @@ private fun TaskCard(
     task: GenerationTask,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
-    onOpenResult: (AssetRef) -> Unit,
+    onOpenResult: (GeneratedAssetReference) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),

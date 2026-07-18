@@ -1,13 +1,6 @@
 package io.github.ayaseminami.gnbp.generation
 
-import io.github.ayaseminami.gnbp.media.AssetRef
-import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
-import io.github.ayaseminami.gnbp.media.ImagePreparationResult
-import io.github.ayaseminami.gnbp.media.MediaAssetId
-import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
-import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
-import io.github.ayaseminami.gnbp.provider.ImageGenerationProvider
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
@@ -22,16 +15,56 @@ value class TaskId(val value: String) {
     }
 }
 
+enum class GenerationProviderKind {
+    Gemini,
+    OpenAiCompatible,
+}
+
+data class ReferenceAssetInput(
+    val id: String,
+    val displayName: String,
+    val mimeType: String,
+) {
+    init {
+        require(id.isNotBlank()) { "Reference asset ID must not be blank" }
+        require(displayName.isNotBlank()) { "Reference display name must not be blank" }
+        require(mimeType.startsWith("image/")) { "Reference MIME type must be an image" }
+    }
+
+    override fun toString(): String =
+        "ReferenceAssetInput(id=[REDACTED], displayName=[REDACTED], mimeType=$mimeType)"
+}
+
+data class GeneratedAssetReference(
+    val id: String,
+    val location: String,
+    val displayName: String,
+    val mimeType: String,
+    val byteSize: Long,
+) {
+    init {
+        require(id.isNotBlank()) { "Generated asset ID must not be blank" }
+        require(location.isNotBlank()) { "Generated asset location must not be blank" }
+        require(displayName.isNotBlank()) { "Generated display name must not be blank" }
+        require(mimeType.startsWith("image/")) { "Generated MIME type must be an image" }
+        require(byteSize > 0) { "Generated asset byte size must be positive" }
+    }
+
+    override fun toString(): String =
+        "GeneratedAssetReference(id=[REDACTED], location=[REDACTED], " +
+            "displayName=[REDACTED], mimeType=$mimeType, byteSize=$byteSize)"
+}
+
 data class GenerationBatchRequest(
-    val profile: ProviderProfile,
+    val profileId: ProfileId,
     val prompt: String,
     val parameters: GenerationParameters,
-    val references: List<DurableReferenceAsset> = emptyList(),
+    val references: List<ReferenceAssetInput> = emptyList(),
     val count: Int = 1,
 )
 
 data class ReferenceAssetSnapshot(
-    val id: MediaAssetId,
+    val id: String,
     val displayName: String,
     val mimeType: String,
 ) {
@@ -42,7 +75,7 @@ data class ReferenceAssetSnapshot(
 data class TaskRequestSnapshot(
     val profileId: ProfileId,
     val profileName: String,
-    val providerKind: ProviderKind,
+    val providerKind: GenerationProviderKind,
     val model: String,
     val prompt: String,
     val parameters: GenerationParameters,
@@ -74,7 +107,7 @@ sealed interface TaskStatus {
 
     data object Running : TaskStatus
 
-    data class Succeeded(val asset: AssetRef) : TaskStatus
+    data class Succeeded(val asset: GeneratedAssetReference) : TaskStatus
 
     data class Failed(val reason: TaskFailureReason) : TaskStatus
 
@@ -91,6 +124,7 @@ enum class TaskFailureReason {
     Transport,
     MalformedResponse,
     NoImageData,
+    ReferenceUnavailable,
     AssetSaveFailed,
 }
 
@@ -111,13 +145,15 @@ sealed interface EnqueueResult {
 }
 
 sealed interface EnqueueFailureReason {
+    data object ProfileUnavailable : EnqueueFailureReason
+
     data object BlankPrompt : EnqueueFailureReason
 
     data object InvalidBatchCount : EnqueueFailureReason
 
     data object ParameterMismatch : EnqueueFailureReason
 
-    data class ReferencePreparationFailed(val assetId: MediaAssetId) : EnqueueFailureReason
+    data class ReferencePreparationFailed(val assetId: String) : EnqueueFailureReason
 }
 
 sealed interface CancelResult {
@@ -148,24 +184,4 @@ interface GenerationEngine : Closeable {
     suspend fun cancel(id: TaskId): CancelResult
 
     suspend fun retry(id: TaskId): RetryResult
-}
-
-fun interface GenerationProviderFactory {
-    fun create(profile: ProviderProfile): ImageGenerationProvider
-}
-
-fun interface ReferencePreparer {
-    suspend fun prepare(asset: DurableReferenceAsset): ImagePreparationResult
-}
-
-interface GenerationTaskRepository {
-    fun observeTasks(): Flow<List<GenerationTask>>
-
-    suspend fun loadTasks(): List<GenerationTask>
-
-    suspend fun findTask(id: TaskId): GenerationTask?
-
-    suspend fun insertTasks(newTasks: List<GenerationTask>)
-
-    suspend fun updateTask(task: GenerationTask)
 }

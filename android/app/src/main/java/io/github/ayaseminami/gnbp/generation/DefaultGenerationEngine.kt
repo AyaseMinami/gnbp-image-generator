@@ -4,7 +4,8 @@ import io.github.ayaseminami.gnbp.media.AssetSaveResult
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.GeneratedAssetStore
 import io.github.ayaseminami.gnbp.media.ImagePreparationResult
-import io.github.ayaseminami.gnbp.media.MediaAssetId
+import io.github.ayaseminami.gnbp.media.AssetRef
+import io.github.ayaseminami.gnbp.media.ImagePreparationFailure
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.provider.ApiKey
@@ -15,6 +16,7 @@ import io.github.ayaseminami.gnbp.provider.ImageGenerationResult
 import io.github.ayaseminami.gnbp.provider.ProviderError
 import io.github.ayaseminami.gnbp.provider.ReferenceImage
 import io.github.ayaseminami.gnbp.provider.transport.DeliveryCertainty
+import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
 import io.github.ayaseminami.gnbp.provider.transport.TransportSecurityMode
 import java.util.UUID
@@ -39,6 +41,7 @@ class DefaultGenerationEngine(
     private val providerFactory: GenerationProviderFactory,
     private val generatedAssetStore: GeneratedAssetStore,
     private val referencePreparer: ReferencePreparer,
+    private val profileLoader: suspend (ProfileId) -> ProviderProfile?,
     private val maxConcurrency: Int,
     externalScope: CoroutineScope,
     workerDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -65,30 +68,23 @@ class DefaultGenerationEngine(
     override suspend fun enqueue(request: GenerationBatchRequest): EnqueueResult {
         ready.await()
         validate(request)?.let { return EnqueueResult.Rejected(it) }
-        val referencePreparation = withContext(referenceDispatcher) {
-            val prepared = mutableListOf<ReferenceImage>()
-            request.references.forEach { asset ->
-                when (val result = referencePreparer.prepare(asset)) {
-                    is ImagePreparationResult.Prepared -> prepared += result.reference.copyOwned()
-                    is ImagePreparationResult.Failed -> return@withContext ReferencePreparationBatchResult.Failed(
-                        asset.id,
-                    )
-                }
-            }
-            ReferencePreparationBatchResult.Prepared(prepared)
+        val profile = loadProfile(request.profileId)
+            ?: return EnqueueResult.Rejected(EnqueueFailureReason.ProfileUnavailable)
+        validate(request, profile.providerKind.toGenerationKind())?.let {
+            return EnqueueResult.Rejected(it)
         }
-        val preparedReferences = when (referencePreparation) {
-            is ReferencePreparationBatchResult.Prepared -> referencePreparation.references
-            is ReferencePreparationBatchResult.Failed -> return EnqueueResult.Rejected(
-                EnqueueFailureReason.ReferencePreparationFailed(referencePreparation.assetId),
+        val execution = when (val built = buildExecutionSnapshot(request, profile)) {
+            is ExecutionBuildResult.Ready -> built.snapshot
+            ExecutionBuildResult.ProfileUnavailable ->
+                return EnqueueResult.Rejected(EnqueueFailureReason.ProfileUnavailable)
+            is ExecutionBuildResult.ReferenceUnavailable -> return EnqueueResult.Rejected(
+                EnqueueFailureReason.ReferencePreparationFailed(built.assetId),
             )
         }
-
-        val profile = request.profile.copyOwned()
         val requestSummary = TaskRequestSnapshot(
             profileId = profile.id,
             profileName = profile.name,
-            providerKind = profile.providerKind,
+            providerKind = profile.providerKind.toGenerationKind(),
             model = profile.model,
             prompt = request.prompt,
             parameters = request.parameters,
@@ -108,16 +104,7 @@ class DefaultGenerationEngine(
                     createdAtEpochMillis = createdAt,
                 )
                 newTasks += task
-                snapshots[taskId] = ExecutionSnapshot(
-                    profile = profile.copyOwned(),
-                    request = ImageGenerationRequest(
-                        model = profile.model,
-                        prompt = request.prompt,
-                        parameters = request.parameters,
-                        referenceImages = preparedReferences.map(ReferenceImage::copyOwned),
-                    ),
-                    metadata = request.toMetadata(profile),
-                )
+                snapshots[taskId] = execution.copyOwned()
             }
             taskRepository.insertTasks(newTasks)
         }
@@ -137,6 +124,7 @@ class DefaultGenerationEngine(
                             finishedAtEpochMillis = nowEpochMillis(),
                         ),
                     )
+                    snapshots -= id
                     CancelResult.Cancelled
                 }
                 TaskStatus.Running -> {
@@ -151,31 +139,36 @@ class DefaultGenerationEngine(
 
     override suspend fun retry(id: TaskId): RetryResult {
         ready.await()
-        val taskToQueue = stateMutex.withLock {
-            val source = taskRepository.findTask(id) ?: return@withLock null to RetryResult.NotFound
-            if (
-                source.status !is TaskStatus.Failed &&
-                source.status !is TaskStatus.Cancelled &&
-                source.status !is TaskStatus.OutcomeUnknown
-            ) {
-                return@withLock null to RetryResult.NotRetryable
-            }
-            val sourceSnapshot = snapshots[id]
-                ?: return@withLock null to RetryResult.SnapshotUnavailable
+        val sourceTask = stateMutex.withLock { taskRepository.findTask(id) }
+            ?: return RetryResult.NotFound
+        if (
+            sourceTask.status !is TaskStatus.Failed &&
+            sourceTask.status !is TaskStatus.Cancelled &&
+            sourceTask.status !is TaskStatus.OutcomeUnknown
+        ) {
+            return RetryResult.NotRetryable
+        }
+        val execution = when (val built = buildExecutionSnapshot(sourceTask.request)) {
+            is ExecutionBuildResult.Ready -> built.snapshot
+            ExecutionBuildResult.ProfileUnavailable,
+            is ExecutionBuildResult.ReferenceUnavailable,
+            -> return RetryResult.SnapshotUnavailable
+        }
+        val task = stateMutex.withLock {
             val newId = nextUniqueTaskId(emptySet())
-            val task = GenerationTask(
+            val newTask = GenerationTask(
                 id = newId,
-                request = source.request,
+                request = sourceTask.request,
                 status = TaskStatus.Queued,
                 createdAtEpochMillis = nowEpochMillis(),
                 sourceTaskId = id,
             )
-            snapshots[newId] = sourceSnapshot.copyOwned()
-            taskRepository.insertTasks(listOf(task))
-            task to RetryResult.Enqueued(newId)
+            snapshots[newId] = execution.copyOwned()
+            taskRepository.insertTasks(listOf(newTask))
+            newTask
         }
-        taskToQueue.first?.let { task -> queue.send(task.id) }
-        return taskToQueue.second
+        queue.send(task.id)
+        return RetryResult.Enqueued(task.id)
     }
 
     override fun close() {
@@ -186,7 +179,8 @@ class DefaultGenerationEngine(
 
     private suspend fun initialize() {
         try {
-            stateMutex.withLock {
+            val queuedTasks = stateMutex.withLock {
+                val queued = mutableListOf<GenerationTask>()
                 taskRepository.loadTasks().forEach { task ->
                     val reconciled = when (task.status) {
                         TaskStatus.Running -> task.copy(
@@ -195,20 +189,20 @@ class DefaultGenerationEngine(
                             ),
                             finishedAtEpochMillis = nowEpochMillis(),
                         )
-                        TaskStatus.Queued -> task.copy(
-                            status = TaskStatus.Cancelled(
-                                TaskCancellationReason.ProcessInterruptedBeforeStart,
-                            ),
-                            finishedAtEpochMillis = nowEpochMillis(),
-                        )
+                        TaskStatus.Queued -> {
+                            queued += task
+                            null
+                        }
                         else -> null
                     }
                     reconciled?.let { taskRepository.updateTask(it) }
                 }
+                queued
             }
             repeat(maxConcurrency) {
                 scope.launch { consumeQueue() }
             }
+            queuedTasks.forEach { queue.send(it.id) }
             ready.complete(Unit)
         } catch (error: Exception) {
             ready.completeExceptionally(error)
@@ -221,10 +215,28 @@ class DefaultGenerationEngine(
 
     private suspend fun execute(taskId: TaskId) {
         val cancellation = GenerationCancellation()
-        val snapshot = stateMutex.withLock {
+        val queuedTask = stateMutex.withLock {
             val task = taskRepository.findTask(taskId) ?: return@withLock null
-            val execution = snapshots[taskId]
-            if (task.status != TaskStatus.Queued || execution == null) return@withLock null
+            if (task.status != TaskStatus.Queued) return@withLock null
+            task to snapshots[taskId]?.copyOwned()
+        } ?: return
+
+        val snapshot = when (val built = queuedTask.second?.let { ExecutionBuildResult.Ready(it) }
+            ?: buildExecutionSnapshot(queuedTask.first.request)) {
+            is ExecutionBuildResult.Ready -> built.snapshot
+            ExecutionBuildResult.ProfileUnavailable -> {
+                failBeforeStart(taskId, TaskStatus.Failed(TaskFailureReason.ProviderUnavailable))
+                return
+            }
+            is ExecutionBuildResult.ReferenceUnavailable -> {
+                failBeforeStart(taskId, TaskStatus.Failed(TaskFailureReason.ReferenceUnavailable))
+                return
+            }
+        }
+        val started = stateMutex.withLock {
+            val task = taskRepository.findTask(taskId) ?: return@withLock false
+            if (task.status != TaskStatus.Queued) return@withLock false
+            snapshots[taskId] = snapshot.copyOwned()
             activeCancellations[taskId] = cancellation
             taskRepository.updateTask(
                 task.copy(
@@ -232,8 +244,9 @@ class DefaultGenerationEngine(
                     startedAtEpochMillis = nowEpochMillis(),
                 ),
             )
-            execution
-        } ?: return
+            true
+        }
+        if (!started) return
 
         val provider = try {
             providerFactory.create(snapshot.profile)
@@ -253,7 +266,7 @@ class DefaultGenerationEngine(
         val finalStatus = when (generationResult) {
             is ImageGenerationResult.Success -> try {
                 when (val saved = generatedAssetStore.save(generationResult.image, snapshot.metadata)) {
-                    is AssetSaveResult.Saved -> TaskStatus.Succeeded(saved.asset)
+                    is AssetSaveResult.Saved -> TaskStatus.Succeeded(saved.asset.toGenerationReference())
                     is AssetSaveResult.Failed -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
                 }
             } catch (error: CancellationException) {
@@ -281,6 +294,19 @@ class DefaultGenerationEngine(
             }
             activeCancellations -= taskId
             requestedCancellations -= taskId
+            snapshots -= taskId
+        }
+    }
+
+    private suspend fun failBeforeStart(taskId: TaskId, status: TaskStatus) {
+        stateMutex.withLock {
+            val task = taskRepository.findTask(taskId) ?: return@withLock
+            if (task.status == TaskStatus.Queued) {
+                taskRepository.updateTask(
+                    task.copy(status = status, finishedAtEpochMillis = nowEpochMillis()),
+                )
+                snapshots -= taskId
+            }
         }
     }
 
@@ -295,11 +321,105 @@ class DefaultGenerationEngine(
     private fun validate(request: GenerationBatchRequest): EnqueueFailureReason? = when {
         request.prompt.isBlank() -> EnqueueFailureReason.BlankPrompt
         request.count !in 1..MAX_BATCH_COUNT -> EnqueueFailureReason.InvalidBatchCount
-        request.profile.providerKind == ProviderKind.Gemini &&
+        else -> null
+    }
+
+    private fun validate(
+        request: GenerationBatchRequest,
+        providerKind: GenerationProviderKind,
+    ): EnqueueFailureReason? = when {
+        providerKind == GenerationProviderKind.Gemini &&
             request.parameters !is GenerationParameters.Gemini -> EnqueueFailureReason.ParameterMismatch
-        request.profile.providerKind == ProviderKind.OpenAiCompatible &&
+        providerKind == GenerationProviderKind.OpenAiCompatible &&
             request.parameters !is GenerationParameters.OpenAi -> EnqueueFailureReason.ParameterMismatch
         else -> null
+    }
+
+    private suspend fun loadProfile(profileId: ProfileId): ProviderProfile? = try {
+        profileLoader(profileId)?.copyOwned()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun buildExecutionSnapshot(
+        request: GenerationBatchRequest,
+    ): ExecutionBuildResult {
+        val profile = loadProfile(request.profileId)
+            ?: return ExecutionBuildResult.ProfileUnavailable
+        return buildExecutionSnapshot(request, profile)
+    }
+
+    private suspend fun buildExecutionSnapshot(
+        request: GenerationBatchRequest,
+        profile: ProviderProfile,
+        model: String = profile.model,
+        providerName: String = profile.providerKind.name,
+    ): ExecutionBuildResult {
+        val referencePreparation = withContext(referenceDispatcher) {
+            val prepared = mutableListOf<ReferenceImage>()
+            request.references.forEach { asset ->
+                val result = try {
+                    referencePreparer.prepare(asset)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    ImagePreparationResult.Failed(ImagePreparationFailure.SourceMissing)
+                }
+                when (result) {
+                    is ImagePreparationResult.Prepared -> prepared += result.reference.copyOwned()
+                    is ImagePreparationResult.Failed -> return@withContext ReferencePreparationBatchResult.Failed(
+                        asset.id,
+                    )
+                }
+            }
+            ReferencePreparationBatchResult.Prepared(prepared)
+        }
+        val preparedReferences = when (referencePreparation) {
+            is ReferencePreparationBatchResult.Prepared -> referencePreparation.references
+            is ReferencePreparationBatchResult.Failed ->
+                return ExecutionBuildResult.ReferenceUnavailable(referencePreparation.assetId)
+        }
+        return ExecutionBuildResult.Ready(
+            ExecutionSnapshot(
+                profile = profile.copyOwned(),
+                request = ImageGenerationRequest(
+                    model = model,
+                    prompt = request.prompt,
+                    parameters = request.parameters,
+                    referenceImages = preparedReferences.map(ReferenceImage::copyOwned),
+                ),
+                metadata = request.toMetadata(model, providerName),
+            ),
+        )
+    }
+
+    private suspend fun buildExecutionSnapshot(
+        request: TaskRequestSnapshot,
+    ): ExecutionBuildResult {
+        val profile = loadProfile(request.profileId)
+            ?: return ExecutionBuildResult.ProfileUnavailable
+        if (profile.providerKind.toGenerationKind() != request.providerKind) {
+            return ExecutionBuildResult.ProfileUnavailable
+        }
+        return buildExecutionSnapshot(
+            request = GenerationBatchRequest(
+                profileId = request.profileId,
+                prompt = request.prompt,
+                parameters = request.parameters,
+                references = request.references.map { reference ->
+                    ReferenceAssetInput(
+                        id = reference.id,
+                        displayName = reference.displayName,
+                        mimeType = reference.mimeType,
+                    )
+                },
+            ),
+            profile = profile,
+            model = request.model,
+            providerName = request.providerKind.name,
+        )
     }
 
     private companion object {
@@ -327,8 +447,16 @@ private sealed interface ReferencePreparationBatchResult {
     data class Prepared(val references: List<ReferenceImage>) : ReferencePreparationBatchResult
 
     data class Failed(
-        val assetId: MediaAssetId,
+        val assetId: String,
     ) : ReferencePreparationBatchResult
+}
+
+private sealed interface ExecutionBuildResult {
+    data class Ready(val snapshot: ExecutionSnapshot) : ExecutionBuildResult
+
+    data object ProfileUnavailable : ExecutionBuildResult
+
+    data class ReferenceUnavailable(val assetId: String) : ExecutionBuildResult
 }
 
 private fun ReferenceImage.copyOwned(): ReferenceImage =
@@ -359,10 +487,13 @@ private fun TransportSecurityMode.copyOwned(): TransportSecurityMode = when (thi
     is TransportSecurityMode.CleartextHttp -> copy()
 }
 
-private fun GenerationBatchRequest.toMetadata(profile: ProviderProfile): GeneratedAssetMetadata =
+private fun GenerationBatchRequest.toMetadata(
+    model: String,
+    providerName: String,
+): GeneratedAssetMetadata =
     GeneratedAssetMetadata(
-        provider = profile.providerKind.name,
-        model = profile.model,
+        provider = providerName,
+        model = model,
         parameters = when (val value = parameters) {
             is GenerationParameters.Gemini -> mapOf(
                 "aspect_ratio" to value.aspectRatio,
@@ -376,6 +507,19 @@ private fun GenerationBatchRequest.toMetadata(profile: ProviderProfile): Generat
         },
         referenceDisplayNames = references.map { it.displayName },
     )
+
+private fun ProviderKind.toGenerationKind(): GenerationProviderKind = when (this) {
+    ProviderKind.Gemini -> GenerationProviderKind.Gemini
+    ProviderKind.OpenAiCompatible -> GenerationProviderKind.OpenAiCompatible
+}
+
+private fun AssetRef.toGenerationReference(): GeneratedAssetReference = GeneratedAssetReference(
+    id = id.value,
+    location = uri.toString(),
+    displayName = displayName,
+    mimeType = mimeType,
+    byteSize = byteSize,
+)
 
 private fun ProviderError.toTaskStatus(cancellationRequested: Boolean): TaskStatus {
     if (certainty == DeliveryCertainty.PossiblySent) {

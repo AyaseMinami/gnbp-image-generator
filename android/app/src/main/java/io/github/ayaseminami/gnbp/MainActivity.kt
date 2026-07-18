@@ -9,8 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.net.toUri
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
+import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.media.ReferenceDraftViewModel
 import io.github.ayaseminami.gnbp.media.ReferenceImagePicker
 import io.github.ayaseminami.gnbp.media.previewIntent
@@ -88,7 +91,14 @@ class MainActivity : ComponentActivity() {
         permissionLauncher.launch(permission.manifestPermission)
     }
 
-    private fun openResult(asset: AssetRef) {
-        runCatching { startActivity(asset.previewIntent()) }
+    private fun openResult(asset: GeneratedAssetReference) {
+        val mediaAsset = AssetRef(
+            id = MediaAssetId(asset.id),
+            uri = asset.location.toUri(),
+            displayName = asset.displayName,
+            mimeType = asset.mimeType,
+            byteSize = asset.byteSize,
+        )
+        runCatching { startActivity(mediaAsset.previewIntent()) }
     }
 }
