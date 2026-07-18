@@ -1,6 +1,7 @@
 package io.github.ayaseminami.gnbp.provider.transport
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -8,6 +9,19 @@ class TransportBindingTest {
     @Test
     fun `sensitive transport values never reveal their content through toString`() {
         assertEquals("[REDACTED]", SensitiveValue("sentinel-secret").toString())
+
+        val authority = EndpointAuthority("https", "sentinel-host.example", 443)
+        val acknowledgement = UnsafeTransportAcknowledgement(
+            profileId = ProfileId("sentinel-profile"),
+            authority = authority,
+            mode = UnsafeTransportMode.TrustAllTls,
+            policyRevision = TransportBinding.CURRENT_POLICY_REVISION,
+            acceptedAtEpochMillis = 1L,
+        )
+
+        assertFalse(authority.toString().contains("sentinel-host"))
+        assertFalse(acknowledgement.toString().contains("sentinel-host"))
+        assertFalse(acknowledgement.toString().contains("sentinel-profile"))
     }
 
     @Test

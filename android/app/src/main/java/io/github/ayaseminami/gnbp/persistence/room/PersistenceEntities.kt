@@ -1,0 +1,54 @@
+package io.github.ayaseminami.gnbp.persistence.room
+
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "profiles")
+internal data class ProfileEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    @ColumnInfo(name = "provider_kind") val providerKind: String,
+    @ColumnInfo(name = "endpoint_url") val endpointUrl: String,
+    val model: String,
+    @ColumnInfo(name = "secret_version") val secretVersion: Int,
+    @ColumnInfo(name = "api_key_iv", typeAffinity = ColumnInfo.BLOB) val apiKeyIv: ByteArray,
+    @ColumnInfo(name = "api_key_ciphertext", typeAffinity = ColumnInfo.BLOB) val apiKeyCiphertext: ByteArray,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int,
+    @ColumnInfo(name = "security_mode", defaultValue = "'VERIFIED_TLS'")
+    val securityMode: String = "VERIFIED_TLS",
+    @ColumnInfo(name = "local_network_mode", defaultValue = "'INTERNET_OR_LOOPBACK_ONLY'")
+    val localNetworkMode: String = "INTERNET_OR_LOOPBACK_ONLY",
+    @ColumnInfo(name = "transport_policy_revision", defaultValue = "1")
+    val transportPolicyRevision: Int = 1,
+    @ColumnInfo(name = "custom_ca_certificates_json", defaultValue = "'[]'")
+    val customCaCertificatesJson: String = "[]",
+    @ColumnInfo(name = "spki_pins_json", defaultValue = "'[]'")
+    val spkiPinsJson: String = "[]",
+    @ColumnInfo(name = "pinned_certificate", typeAffinity = ColumnInfo.BLOB)
+    val pinnedCertificate: ByteArray? = null,
+    @ColumnInfo(name = "allow_hostname_mismatch", defaultValue = "0")
+    val allowHostnameMismatch: Boolean = false,
+    @ColumnInfo(name = "ack_profile_id") val acknowledgementProfileId: String? = null,
+    @ColumnInfo(name = "ack_scheme") val acknowledgementScheme: String? = null,
+    @ColumnInfo(name = "ack_host") val acknowledgementHost: String? = null,
+    @ColumnInfo(name = "ack_port") val acknowledgementPort: Int? = null,
+    @ColumnInfo(name = "ack_mode") val acknowledgementMode: String? = null,
+    @ColumnInfo(name = "ack_policy_revision") val acknowledgementPolicyRevision: Int? = null,
+    @ColumnInfo(name = "ack_accepted_at") val acknowledgementAcceptedAt: Long? = null,
+) {
+    override fun toString(): String =
+        "ProfileEntity(id=[REDACTED], name=[REDACTED], providerKind=$providerKind, " +
+            "endpoint=[REDACTED], model=[REDACTED], apiKey=[REDACTED], securityMode=$securityMode)"
+}
+
+@Entity(tableName = "prompts")
+internal data class PromptEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val content: String,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int,
+) {
+    override fun toString(): String =
+        "PromptEntity(id=[REDACTED], name=[REDACTED], content=[REDACTED], sortOrder=$sortOrder)"
+}

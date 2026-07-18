@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M2 provider slice implemented, pending slice review
+Status: Approved; M2 slice passed review; M3 secure persistence pending review
 Date: 2026-07-17
 
 ## 1. Objective
@@ -320,6 +320,10 @@ Exit criteria: CRUD, migration, encryption, and restart tests pass.
 
 ### M4 - Media Input And Output
 
+- connect `LinkProperties.getNat64Prefix()` to the transport address classifier
+  so DNS64-wrapped private destinations cannot bypass per-profile LAN policy;
+  add the well-known `64:ff9b::/96` fallback and test both private and public
+  embedded IPv4 destinations;
 - integrate Photo Picker and durable URI handling;
 - implement bounded image decoding, resize, and compression;
 - save results through MediaStore;
@@ -529,5 +533,5 @@ long-term traceability.
 3. The typed transport and provider contract slice now has offline tests and a
    mechanical CI check that keeps networking construction inside the provider
    transport module.
-4. Submit the fixed M2 diff for independent slice review and resolve its
-   findings before starting M3.
+4. M2 slice review passed at commit `ab8282e`; M3 secure persistence is
+   implemented and awaiting independent slice review.

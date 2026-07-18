@@ -322,6 +322,26 @@ class OkHttpProviderHttpTransportTest {
     }
 
     @Test
+    fun `non-IO transport exceptions become a typed sanitized failure`() = runTest {
+        val binding = TransportBinding(
+            profileId = ProfileId("runtime-dns-failure-profile"),
+            endpoint = ProviderEndpoint.parse("https://relay.invalid/base/"),
+        )
+        val transport = OkHttpProviderHttpTransport(
+            localNetworkPermissionChecker = LocalNetworkPermissionChecker { true },
+            baseDns = Dns { throw IllegalStateException("sentinel-runtime-detail") },
+        )
+
+        val result = transport.execute(call(binding, listOf("v1", "generate")))
+
+        assertEquals(
+            ProviderHttpResult.Failure(TransportFailure.Unexpected(DeliveryCertainty.NotSent)),
+            result,
+        )
+        assertFalse(result.toString().contains("sentinel-runtime-detail"))
+    }
+
+    @Test
     fun `connection failure before transmission remains not sent`() = runTest {
         val server = MockWebServer()
         server.start()

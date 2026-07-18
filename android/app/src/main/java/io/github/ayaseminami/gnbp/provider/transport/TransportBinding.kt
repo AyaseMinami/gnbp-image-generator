@@ -14,7 +14,9 @@ data class EndpointAuthority(
     val scheme: String,
     val asciiHost: String,
     val effectivePort: Int,
-)
+) {
+    override fun toString(): String = "EndpointAuthority([REDACTED])"
+}
 
 class ProviderEndpoint private constructor(
     val authority: EndpointAuthority,
@@ -54,6 +56,10 @@ data class UnsafeTransportAcknowledgement(
         require(policyRevision > 0) { "Acknowledgement policy revision must be positive" }
         require(acceptedAtEpochMillis > 0) { "Acknowledgement time must be positive" }
     }
+
+    override fun toString(): String =
+        "UnsafeTransportAcknowledgement(profileId=[REDACTED], authority=[REDACTED], " +
+            "mode=$mode, policyRevision=$policyRevision, acceptedAt=[REDACTED])"
 }
 
 sealed interface TransportSecurityMode {

@@ -24,6 +24,7 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import okhttp3.Call
 import okhttp3.Dns
 import okhttp3.EventListener
@@ -166,6 +167,15 @@ internal class OkHttpProviderHttpTransport(
                 }
             }
             ProviderHttpResult.Failure(failure)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            ProviderHttpResult.Failure(
+                deliveryAwareFailure(
+                    certainty = tracker.certainty(),
+                    unknownReason = RequestOutcomeUnknownReason.ConnectionLost,
+                    knownFailure = TransportFailure::Unexpected,
+                ),
+            )
         } finally {
             call.cancellation.detach()
         }

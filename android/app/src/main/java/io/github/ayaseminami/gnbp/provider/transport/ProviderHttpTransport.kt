@@ -157,6 +157,10 @@ sealed interface TransportFailure {
         override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent
     }
 
+    data class Unexpected(
+        override val certainty: DeliveryCertainty,
+    ) : TransportFailure
+
     data class Cancelled(
         override val certainty: DeliveryCertainty,
     ) : TransportFailure
