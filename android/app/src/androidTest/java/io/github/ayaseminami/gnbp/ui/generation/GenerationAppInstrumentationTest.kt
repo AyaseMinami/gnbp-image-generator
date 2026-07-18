@@ -6,7 +6,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -44,6 +43,10 @@ import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -57,10 +60,12 @@ class GenerationAppInstrumentationTest {
     val compose = createComposeRule()
 
     private var engine: DefaultGenerationEngine? = null
+    private var workflowScope: CoroutineScope? = null
 
     @After
     fun tearDown() {
         engine?.close()
+        workflowScope?.cancel()
     }
 
     @Test
@@ -70,23 +75,23 @@ class GenerationAppInstrumentationTest {
         val repository = InstrumentedTaskRepository()
         val fakeImage = GeneratedImage(byteArrayOf(1, 2, 3), "image/png")
         val enqueueResult = AtomicReference<EnqueueResult?>()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also {
+            workflowScope = it
+        }
+        val createdEngine = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory {
+                OfflineFakeImageGenerationProvider(fakeImage)
+            },
+            generatedAssetStore = InstrumentedAssetStore(),
+            referencePreparer = ReferencePreparer { error("No references expected") },
+            profileLoader = { profile },
+            maxConcurrency = 1,
+            externalScope = scope,
+            idGenerator = { "fake-workflow-task" },
+        ).also { engine = it }
 
         compose.setContent {
-            val scope = rememberCoroutineScope()
-            val createdEngine = remember {
-                DefaultGenerationEngine(
-                    taskRepository = repository,
-                    providerFactory = GenerationProviderFactory {
-                        OfflineFakeImageGenerationProvider(fakeImage)
-                    },
-                    generatedAssetStore = InstrumentedAssetStore(),
-                    referencePreparer = ReferencePreparer { error("No references expected") },
-                    profileLoader = { profile },
-                    maxConcurrency = 1,
-                    externalScope = scope,
-                    idGenerator = { "fake-workflow-task" },
-                ).also { engine = it }
-            }
             val tasks by createdEngine.observeTasks().collectAsState(initial = emptyList())
             var state by remember {
                 mutableStateOf(
