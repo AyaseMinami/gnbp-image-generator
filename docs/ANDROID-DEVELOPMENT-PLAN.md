@@ -598,5 +598,9 @@ long-term traceability.
    hardening keeps the engine contract free of Android/persistence types,
    resumes safe queued work after restart, and enables explicit retry from only
    persisted task metadata plus current profile/reference adapters. The slice
-   is pending independent code review and device CI; profile editing remains in
-   M6 and reliable background execution remains in M7.
+   passed host verification and the blocking API 26/29/33/36 device matrix in
+   run
+   [`29657054937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29657054937).
+   It remains pending Claude Code review and a manual opt-in provider smoke
+   test; profile editing remains in M6 and reliable background execution remains
+   in M7.
