@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M5 passed; M6 device gate passed; independent review pending
+Status: Approved; M6 passed; M7 is active
 Date: 2026-07-19
 
 ## 1. Objective
@@ -628,7 +628,17 @@ long-term traceability.
     [`29681176171`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681176171)
     then passed host verification and the blocking API 26/29/33/36 device
     matrix. The API 37 16 KB job reproduced its approved non-blocking hosted
-    image failure. Independent review and the user gate remain pending.
+    image failure.
+13. Claude Code independently reviewed the M6 range `daf90cf..a0c5748`,
+    confirmed profile-security editing, exact-authority reset behavior,
+    certificate and pin validation, notification permission handling, Gallery
+    URI ownership, completion-event deduplication, localization, state
+    restoration, and secret/report redaction, and reported no blocking or
+    security findings. The final CI run
+    [`29681595718`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681595718)
+    passed host verification and the blocking API 26/29/33/36 device matrix;
+    API 37 reproduced the approved non-blocking hosted-image failure. The user
+    formally released M6 on 2026-07-19. M7 is the active milestone.
 
 ## 16. Deferred Backlog
 

@@ -2,12 +2,11 @@
 
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
-secure persistence are implemented. M4 media input/output and M5 end-to-end
-generation passed their independent reviews and API 26/29/33/36 device gates.
-M6 MVP completion is in progress. The current branch adds profile/prompt
-editing, Gallery actions, typed diagnostics, and best-effort completion
-notifications, but it is not a supported image-generation release until the M6
-gate is formally released.
+secure persistence are implemented. M4 media input/output, M5 end-to-end
+generation, and M6 MVP completion passed their independent reviews and API
+26/29/33/36 device gates. M7 reliable background execution is the active
+milestone; no public APK is released until its reliability and release gates
+also pass.
 
 ## Toolchain
 
@@ -154,6 +153,10 @@ work and process-death reconciliation.
 
 The signed side-loaded APK procedure and acceptance checklist are documented in
 [`../docs/ANDROID-SIDELOAD-RELEASE.md`](../docs/ANDROID-SIDELOAD-RELEASE.md).
+M6 passed 100 offline Android tests, independent security-focused review, and
+the blocking API 26/29/33/36 device matrix in CI run
+[`29681595718`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681595718).
+The user formally released the milestone on 2026-07-19.
 
 Host tests cover large images, revoked URI access, save rollback, external
 deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the

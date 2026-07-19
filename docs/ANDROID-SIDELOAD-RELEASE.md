@@ -1,11 +1,11 @@
 # Android Sideload Release Guide
 
-Status: Prepared for the M6 release-readiness gate
+Status: M6 engineering gate passed; public release evidence remains pending
 
 This guide covers the signed APK workflow for the first side-loaded Android
-edition. It does not authorize a release by itself. A tag or public APK still
-requires the M6 test/review gate and the API 37 16 KB device evidence recorded
-in the development plan.
+edition. It does not authorize a release by itself. The M6 test/review gate has
+passed, but a tag or public APK still requires the M7 reliability gate and the
+API 37 16 KB device evidence recorded in the development plan.
 
 ## 1. Keep Signing Material Outside The Repository
 
