@@ -52,6 +52,21 @@ Automated tests must remain offline and must never call a real image provider.
 Do not commit `local.properties`, credentials, private endpoints, signing
 stores, APK/AAB files, or generated images.
 
+### Manual Provider Smoke Test
+
+The `providerSmokeTest` Gradle task performs one real image-generation request
+using the repository-root `test_api.txt`. It is deliberately excluded from
+`testDebugUnitTest`, `check`, and CI. Run it only after the request and any
+provider charge have been explicitly authorized:
+
+```powershell
+.\gradlew.bat providerSmokeTest
+```
+
+The task does not print the API key, endpoint, model, prompt, provider response
+message, or returned image bytes. It reports only success or a sanitized error
+category. `test_api.txt` must remain Git-ignored.
+
 ## Provider Transport
 
 M2 provides typed Gemini and OpenAI-compatible adapters behind a shared

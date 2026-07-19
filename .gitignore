@@ -40,6 +40,7 @@ AGENTS.md
 skills-lock.json
 
 # === 本地 API 探针（可能包含私有端点或密钥） ===
+/test_api.txt
 /test_gpt_edit.py
 /test_gpt_image.py
 

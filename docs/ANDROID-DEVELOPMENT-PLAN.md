@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M4 passed; M5 in progress
+Status: Approved; M4 passed; M5 ready for user gate
 Date: 2026-07-19
 
 ## 1. Objective
@@ -599,14 +599,20 @@ long-term traceability.
    resumes safe queued work after restart, and enables explicit retry from only
    persisted task metadata plus current profile/reference adapters. The slice
    passed host verification and the blocking API 26/29/33/36 device matrix in
-   run
-   [`29657054937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29657054937).
+   final run
+   [`29674827413`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29674827413).
    Claude Code's first review confirmed the state-machine and persistence
    invariants, then required reference ownership to move before enqueue and the
-   Compose workflow to use the real submit-button click path. Those follow-up
-   fixes remain pending independent re-review together with a manual opt-in
-   provider smoke test; profile editing remains in M6 and reliable background
-   execution remains in M7.
+   Compose workflow to use the real submit-button click path. Commits `4584136`
+   and `0fadfbd` addressed both findings, and the independent re-review closed
+   them. Profile editing remains in M6 and reliable background execution remains
+   in M7.
+10. Claude Code independently closed both M5 review findings. A manually
+    authorized, single-request OpenAI-compatible HTTPS relay smoke test then
+    passed through the Android provider and transport implementation. The
+    opt-in Gradle task remains excluded from default tests and CI; its reports
+    contained no API key, endpoint, model, prompt, provider message, or image
+    bytes. M5 now awaits the user's formal gate decision.
 
 ## 16. Deferred Backlog
 
@@ -618,3 +624,9 @@ long-term traceability.
 - Reassess at-rest privacy before release. The MVP intentionally keeps prompts
   and sanitized reference display names as plaintext in the app-private Room
   database; API keys remain encrypted and never enter task persistence.
+- Prevent locally predictable enqueue rejection from orphaning newly claimed
+  reference assets. M6 should at minimum disable submission for a blank prompt;
+  the engine remains the final validation authority.
+- Preserve or clearly recover a pending permission-grant submission across
+  Activity recreation. The current draft assets remain available, but automatic
+  resubmission may require the user to press Generate again.

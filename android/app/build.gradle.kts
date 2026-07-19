@@ -177,3 +177,31 @@ tasks.named("preBuild").configure {
 tasks.named("check").configure {
     dependsOn(verifyDebugApkPageAlignment)
 }
+
+val providerSmokeTestClass = "**/ProviderSmokeTest.class"
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name == "testDebugUnitTest") {
+        exclude(providerSmokeTestClass)
+    }
+}
+
+val providerSmokeTest by tasks.registering(org.gradle.api.tasks.testing.Test::class) {
+    group = "verification"
+    description = "Runs one manually authorized real-provider image request outside CI."
+    val debugUnitTests = tasks.named<org.gradle.api.tasks.testing.Test>("testDebugUnitTest")
+    dependsOn(debugUnitTests)
+
+    testClassesDirs = debugUnitTests.get().testClassesDirs
+    classpath = debugUnitTests.get().classpath
+    include(providerSmokeTestClass)
+    useJUnit()
+
+    val smokeConfig = rootProject.layout.projectDirectory.file("../test_api.txt").asFile
+    systemProperty("gnbp.providerSmoke.config", smokeConfig.absolutePath)
+    outputs.upToDateWhen { false }
+    doFirst {
+        check(smokeConfig.isFile) {
+            "Provider smoke config is missing from the repository root"
+        }
+    }
+}
