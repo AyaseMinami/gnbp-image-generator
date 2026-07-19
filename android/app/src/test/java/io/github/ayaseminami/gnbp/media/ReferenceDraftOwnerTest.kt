@@ -75,6 +75,27 @@ class ReferenceDraftOwnerTest {
         assertTrue(second.file.exists())
     }
 
+    @Test
+    fun `claiming assets for a task releases draft ownership without deleting files`() {
+        val first = asset("first")
+        val second = asset("second")
+        val owner = ReferenceDraftOwner { asset -> asset.file.delete() }
+        owner.accept(
+            listOf(
+                ReferenceImportResult.Imported(first),
+                ReferenceImportResult.Imported(second),
+            ),
+        )
+
+        val taskOwnedAssets = owner.claimForTask(listOf(first))
+
+        assertEquals(listOf(first), taskOwnedAssets)
+        assertEquals(listOf(second), owner.state.value.assets)
+        owner.clear()
+        assertTrue(first.file.exists())
+        assertFalse(second.file.exists())
+    }
+
     private fun asset(id: String): DurableReferenceAsset {
         val file = File(root, "$id.input").apply { writeText("image") }
         return DurableReferenceAsset(

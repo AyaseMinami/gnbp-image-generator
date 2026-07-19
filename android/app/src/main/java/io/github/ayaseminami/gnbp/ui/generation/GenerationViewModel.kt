@@ -154,8 +154,7 @@ class GenerationViewModel(
     }
 
     fun submit(
-        references: List<DurableReferenceAsset>,
-        onAccepted: (List<DurableReferenceAsset>) -> Unit,
+        claimTaskOwnedReferences: () -> List<DurableReferenceAsset>,
         onPermissionRequired: (GenerationPermission) -> Unit,
     ) {
         if (mutableUiState.value.isSubmitting) return
@@ -193,12 +192,14 @@ class GenerationViewModel(
                 return@launch
             }
             val result = try {
-                engineReady.await().enqueue(
+                val readyEngine = engineReady.await()
+                val taskOwnedReferences = claimTaskOwnedReferences()
+                readyEngine.enqueue(
                     GenerationBatchRequest(
                         profileId = profile.id,
                         prompt = form.prompt,
                         parameters = parameters,
-                        references = references.map { asset ->
+                        references = taskOwnedReferences.map { asset ->
                             ReferenceAssetInput(
                                 id = asset.id.value,
                                 displayName = asset.displayName,
@@ -222,7 +223,6 @@ class GenerationViewModel(
                         selectedProfileId = profileId,
                         batchCount = form.batchCount,
                     )
-                    onAccepted(references)
                     mutableUiState.update {
                         it.copy(
                             isSubmitting = false,

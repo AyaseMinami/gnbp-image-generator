@@ -601,6 +601,20 @@ long-term traceability.
    passed host verification and the blocking API 26/29/33/36 device matrix in
    run
    [`29657054937`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29657054937).
-   It remains pending Claude Code review and a manual opt-in provider smoke
-   test; profile editing remains in M6 and reliable background execution remains
-   in M7.
+   Claude Code's first review confirmed the state-machine and persistence
+   invariants, then required reference ownership to move before enqueue and the
+   Compose workflow to use the real submit-button click path. Those follow-up
+   fixes remain pending independent re-review together with a manual opt-in
+   provider smoke test; profile editing remains in M6 and reliable background
+   execution remains in M7.
+
+## 16. Deferred Backlog
+
+- Make explicit retry idempotent across concurrent invocations so rapid or
+  duplicated retry actions cannot enqueue more than one replacement task for
+  the same source task.
+- Define a bounded retention policy for terminal task history and task-owned
+  reference copies, then add repository deletion and coordinated asset cleanup.
+- Reassess at-rest privacy before release. The MVP intentionally keeps prompts
+  and sanitized reference display names as plaintext in the app-private Room
+  database; API keys remain encrypted and never enter task persistence.

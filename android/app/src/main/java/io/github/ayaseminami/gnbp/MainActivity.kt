@@ -75,10 +75,7 @@ class MainActivity : ComponentActivity() {
 
     private fun submit(references: List<DurableReferenceAsset>) {
         generation.submit(
-            references = references,
-            onAccepted = { accepted ->
-                referenceDraft.transferAssets(accepted.mapTo(mutableSetOf()) { it.id })
-            },
+            claimTaskOwnedReferences = { referenceDraft.claimForTask(references) },
             onPermissionRequired = { permission -> requestPermission(permission, references) },
         )
     }

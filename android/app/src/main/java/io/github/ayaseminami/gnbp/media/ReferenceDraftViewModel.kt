@@ -38,8 +38,8 @@ class ReferenceDraftViewModel(
         viewModelScope.launch(Dispatchers.IO) { owner.remove(assetId) }
     }
 
-    fun transferAssets(assetIds: Set<MediaAssetId>): List<DurableReferenceAsset> =
-        owner.transferAssets(assetIds)
+    fun claimForTask(assets: List<DurableReferenceAsset>): List<DurableReferenceAsset> =
+        owner.claimForTask(assets)
 
     override fun onCleared() {
         val abandonedAssets = owner.transferAssets()
@@ -91,5 +91,10 @@ internal class ReferenceDraftOwner(
             current.copy(assets = current.assets.filterNot { it.id in assetIds })
         }
         return assets
+    }
+
+    fun claimForTask(assets: List<DurableReferenceAsset>): List<DurableReferenceAsset> {
+        val assetIds = assets.mapTo(mutableSetOf()) { it.id }
+        return transferAssets(assetIds)
     }
 }

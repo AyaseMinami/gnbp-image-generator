@@ -157,7 +157,7 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.prompt_label)).performTextInput("lighthouse")
         compose.onNodeWithTag(GENERATION_SUBMIT_TEST_TAG)
             .assertIsEnabled()
-        compose.runOnIdle { submitRequest("lighthouse") }
+            .performClick()
         compose.waitUntil(timeoutMillis = 5_000) { submitInvoked.get() }
         compose.waitUntil(timeoutMillis = 10_000) {
             enqueueResult.get() != null || enqueueError.get() != null
