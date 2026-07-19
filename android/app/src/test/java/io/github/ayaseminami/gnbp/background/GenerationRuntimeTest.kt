@@ -130,6 +130,34 @@ class GenerationRuntimeTest {
     }
 
     @Test
+    fun `idle stop cannot close an engine held by an active command lease`() = runTest {
+        val engine = RecordingManagedEngine()
+        val runtime = GenerationRuntime(
+            engineFactory = { engine },
+            shutdownScope = backgroundScope,
+        )
+        runtime.start()
+        val commandStarted = CompletableDeferred<Unit>()
+        val releaseCommand = CompletableDeferred<Unit>()
+        val command = async {
+            runtime.runCommand(startForegroundWork = {}) {
+                commandStarted.complete(Unit)
+                releaseCommand.await()
+                "completed"
+            }
+        }
+        commandStarted.await()
+
+        assertFalse(runtime.stopIfIdle())
+        assertFalse(engine.closed)
+
+        releaseCommand.complete(Unit)
+        assertEquals("completed", command.await())
+        assertTrue(runtime.stopIfIdle())
+        assertTrue(engine.closed)
+    }
+
+    @Test
     fun `cancellation before publication shuts down the unpublished engine`() = runTest {
         val beforePublication = CompletableDeferred<Unit>()
         val engine = RecordingManagedEngine()

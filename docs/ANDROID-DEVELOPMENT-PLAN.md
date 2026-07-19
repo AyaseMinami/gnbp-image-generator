@@ -666,12 +666,18 @@ long-term traceability.
     response is recovered after restart without issuing another paid request.
     Host tests cover singleton startup, restart after initialization failure,
     idle versus interrupted shutdown, and active-work accounting. A device test
-    starts the real service and verifies its ongoing notification channel. The
+    starts the real service and verifies the foreground and ongoing notification
+    flags. A final two-axis review found that idle shutdown could race a newly
+    acquired command lease; `stopIfIdle()` now checks the lease count and enters
+    `Stopping` under the same runtime mutex. The result journal also removes
+    orphaned atomic-write temporary files on its first background access.
+    Targeted concurrency and process-residue tests cover both corrections. The
     existing APK alignment gate now also blocks arm64 ELF `LOAD` alignment below
-    16 KB. The final local gate passes 112 offline Android tests, lint with zero
+    16 KB. The final local gate passes 114 offline Android tests, lint with zero
     errors, instrumentation APK compilation, both 16 KB checks, the network
-    chokepoint, and all 8 desktop tests. Device-matrix CI and independent
-    re-review remain pending.
+    chokepoint, and all 8 desktop tests. Internal standards and specification
+    re-review found no remaining blocker. Device-matrix CI and independent
+    Claude Code review remain pending.
 
 ## 16. Deferred Backlog
 

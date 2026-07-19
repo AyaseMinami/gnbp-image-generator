@@ -132,7 +132,7 @@ class GenerationForegroundService : Service() {
                 applicationGraph.generationRuntime.pendingCommands.value,
             )
             if (snapshot.isActive) return@launch
-            applicationGraph.generationRuntime.stop(interrupted = false)
+            if (!applicationGraph.generationRuntime.stopIfIdle()) return@launch
             runtimeStopped = true
             idleStopRequested = true
             if (stopSelfResult(observedStartId)) {

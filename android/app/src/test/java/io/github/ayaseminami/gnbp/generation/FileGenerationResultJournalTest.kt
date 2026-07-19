@@ -5,6 +5,7 @@ import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
+import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
@@ -19,6 +20,19 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class FileGenerationResultJournalTest {
+    @Test
+    fun `first journal access removes an orphaned atomic-write temporary file`() = runTest {
+        val root = Files.createTempDirectory("gnbp-result-orphan").toFile()
+        val orphan = File(root, ".task.stage.00000000-0000-0000-0000-000000000000.tmp")
+        orphan.writeBytes(byteArrayOf(1, 2, 3))
+
+        assertEquals(
+            ResultJournalRecovery.None,
+            FileGenerationResultJournal(root).load(TaskId("task")),
+        )
+        assertFalse(orphan.exists())
+    }
+
     @Test
     fun `staged provider result survives a new journal instance without leaking content`() = runTest {
         val root = Files.createTempDirectory("gnbp-result-journal").toFile()

@@ -67,11 +67,15 @@ internal object NoOpGenerationResultJournal : GenerationResultJournal {
 internal class FileGenerationResultJournal(
     private val root: File,
 ) : GenerationResultJournal {
+    @Volatile
+    private var temporaryFilesCleaned = false
+
     override suspend fun stage(
         taskId: TaskId,
         image: GeneratedImage,
         metadata: GeneratedAssetMetadata,
     ): Boolean = withContext(Dispatchers.IO) {
+        cleanTemporaryFilesOnce()
         if (image.validateForStorage() != null) return@withContext false
         val header = Json.encodeToString(
             StagedHeader(
@@ -97,6 +101,7 @@ internal class FileGenerationResultJournal(
 
     override suspend fun recordSaved(taskId: TaskId, asset: AssetRef): Boolean =
         withContext(Dispatchers.IO) {
+            cleanTemporaryFilesOnce()
             val bytes = Json.encodeToString(
                 SavedReceipt(
                     id = asset.id.value,
@@ -111,11 +116,13 @@ internal class FileGenerationResultJournal(
         }
 
     override suspend fun load(taskId: TaskId): ResultJournalRecovery = withContext(Dispatchers.IO) {
+        cleanTemporaryFilesOnce()
         readReceipt(receiptFile(taskId))?.let { return@withContext ResultJournalRecovery.Saved(it) }
         readStage(stageFile(taskId)) ?: ResultJournalRecovery.None
     }
 
     override suspend fun delete(taskId: TaskId) = withContext(Dispatchers.IO) {
+        cleanTemporaryFilesOnce()
         runCatching { receiptFile(taskId).delete() }
         runCatching { stageFile(taskId).delete() }
         Unit
@@ -203,6 +210,23 @@ internal class FileGenerationResultJournal(
             false
         } finally {
             temporary?.takeIf(File::exists)?.delete()
+        }
+    }
+
+    private fun cleanTemporaryFilesOnce() {
+        if (temporaryFilesCleaned) return
+        synchronized(this) {
+            if (temporaryFilesCleaned) return
+            root.listFiles()
+                ?.asSequence()
+                ?.filter { file ->
+                    file.isFile &&
+                        file.name.startsWith(".") &&
+                        file.name.endsWith(".tmp") &&
+                        (file.name.contains(".stage.") || file.name.contains(".receipt."))
+                }
+                ?.forEach { file -> runCatching { file.delete() } }
+            temporaryFilesCleaned = true
         }
     }
 

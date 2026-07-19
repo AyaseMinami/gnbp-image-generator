@@ -115,10 +115,25 @@ internal class GenerationRuntime(
         }
     }
 
-    suspend fun stop(interrupted: Boolean): Boolean {
+    suspend fun stop(interrupted: Boolean): Boolean = stop(
+        interrupted = interrupted,
+        requireNoPendingCommands = false,
+    )
+
+    suspend fun stopIfIdle(): Boolean = stop(
+        interrupted = false,
+        requireNoPendingCommands = true,
+    )
+
+    private suspend fun stop(
+        interrupted: Boolean,
+        requireNoPendingCommands: Boolean,
+    ): Boolean {
         while (true) {
             when (val decision = transitionMutex.withLock {
-                when (val state = mutableState.value) {
+                if (requireNoPendingCommands && mutablePendingCommands.value > 0) {
+                    StopDecision.ActiveCommands
+                } else when (val state = mutableState.value) {
                     is RuntimeState.Running -> {
                         val completion = CompletableDeferred<Boolean>()
                         mutableState.value = RuntimeState.Stopping(completion)
@@ -140,6 +155,7 @@ internal class GenerationRuntime(
                 StopDecision.WaitForStart -> {
                     mutableState.first { current -> current != RuntimeState.Starting }
                 }
+                StopDecision.ActiveCommands -> return false
                 StopDecision.AlreadyStopped -> return true
             }
         }
@@ -203,5 +219,6 @@ private sealed interface RuntimeState {
 private sealed interface StopDecision {
     data class Await(val completion: CompletableDeferred<Boolean>) : StopDecision
     data object WaitForStart : StopDecision
+    data object ActiveCommands : StopDecision
     data object AlreadyStopped : StopDecision
 }
