@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -20,7 +21,9 @@ class GenerationForegroundServiceInstrumentationTest {
     @Test
     fun serviceStartsInForegroundAndCreatesItsOngoingChannel() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val serviceIntent = Intent(context, GenerationForegroundService::class.java)
+        val serviceIntent = Intent(context, GenerationForegroundService::class.java).setAction(
+            GenerationForegroundService.ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION,
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
                 context.packageName,
@@ -30,7 +33,7 @@ class GenerationForegroundServiceInstrumentationTest {
         val manager = context.getSystemService(NotificationManager::class.java)
         val expectedName = context.getString(R.string.foreground_notification_channel_name)
         try {
-            GenerationForegroundService.start(context)
+            ContextCompat.startForegroundService(context, serviceIntent)
 
             assertTrue(
                 waitUntil {

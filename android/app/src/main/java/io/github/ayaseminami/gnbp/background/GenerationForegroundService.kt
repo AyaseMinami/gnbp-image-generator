@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.content.ContextCompat
+import io.github.ayaseminami.gnbp.BuildConfig
 import io.github.ayaseminami.gnbp.GnbpApplication
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.ui.notification.AndroidTaskCompletionNotifier
@@ -51,6 +52,9 @@ class GenerationForegroundService : Service() {
         idleStopRequested = false
         runtimeStopped = false
         foregroundNotification.start(this)
+        if (intent?.action == ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION && BuildConfig.DEBUG) {
+            return START_NOT_STICKY
+        }
         if (!collectionStarted) {
             collectionStarted = true
             serviceScope.launch { runForegroundWork() }
@@ -176,6 +180,9 @@ class GenerationForegroundService : Service() {
     }
 
     companion object {
+        internal const val ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION =
+            "io.github.ayaseminami.gnbp.action.HOLD_FOREGROUND_FOR_INSTRUMENTATION"
+
         fun start(context: Context) {
             ContextCompat.startForegroundService(
                 context,
