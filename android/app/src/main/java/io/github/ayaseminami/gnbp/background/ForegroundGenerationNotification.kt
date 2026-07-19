@@ -34,7 +34,7 @@ internal class ForegroundGenerationNotification(
         )
     }
 
-    fun start(service: Service) {
+    fun start(service: Service): Notification {
         val notification = build(ForegroundWorkSnapshot(1, 0, 0))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             service.startForeground(
@@ -45,6 +45,7 @@ internal class ForegroundGenerationNotification(
         } else {
             service.startForeground(NOTIFICATION_ID, notification)
         }
+        return notification
     }
 
     fun update(snapshot: ForegroundWorkSnapshot) {

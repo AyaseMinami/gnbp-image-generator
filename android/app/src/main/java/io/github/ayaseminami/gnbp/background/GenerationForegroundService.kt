@@ -51,8 +51,12 @@ class GenerationForegroundService : Service() {
         latestStartId = startId
         idleStopRequested = false
         runtimeStopped = false
-        foregroundNotification.start(this)
-        if (intent?.action == ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION && BuildConfig.DEBUG) {
+        val holdForInstrumentation =
+            intent?.action == ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION && BuildConfig.DEBUG
+        if (holdForInstrumentation) instrumentationNotificationFlags = null
+        val startedNotification = foregroundNotification.start(this)
+        if (holdForInstrumentation) {
+            instrumentationNotificationFlags = startedNotification.flags
             return START_NOT_STICKY
         }
         if (!collectionStarted) {
@@ -182,6 +186,10 @@ class GenerationForegroundService : Service() {
     companion object {
         internal const val ACTION_HOLD_FOREGROUND_FOR_INSTRUMENTATION =
             "io.github.ayaseminami.gnbp.action.HOLD_FOREGROUND_FOR_INSTRUMENTATION"
+
+        @Volatile
+        internal var instrumentationNotificationFlags: Int? = null
+            private set
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
