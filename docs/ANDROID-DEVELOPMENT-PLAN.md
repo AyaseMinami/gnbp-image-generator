@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M5 passed; M6 implementation complete; device/review gate pending
+Status: Approved; M5 passed; M6 device gate passed; independent review pending
 Date: 2026-07-19
 
 ## 1. Objective
@@ -624,8 +624,11 @@ long-term traceability.
     thumbnails, state-restoration UI coverage, and the signed side-load guide.
     The local gate passed 100 offline Android tests, lint with zero errors,
     instrumentation APK compilation, the network-construction chokepoint, APK
-    16 KB package alignment, and all 8 desktop tests. The blocking API
-    26/29/33/36 device matrix and independent review remain pending.
+    16 KB package alignment, and all 8 desktop tests. CI run
+    [`29681176171`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681176171)
+    then passed host verification and the blocking API 26/29/33/36 device
+    matrix. The API 37 16 KB job reproduced its approved non-blocking hosted
+    image failure. Independent review and the user gate remain pending.
 
 ## 16. Deferred Backlog
 
