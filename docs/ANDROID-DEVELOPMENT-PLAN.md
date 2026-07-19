@@ -676,8 +676,13 @@ long-term traceability.
     16 KB. The final local gate passes 114 offline Android tests, lint with zero
     errors, instrumentation APK compilation, both 16 KB checks, the network
     chokepoint, and all 8 desktop tests. Internal standards and specification
-    re-review found no remaining blocker. Device-matrix CI and independent
-    Claude Code review remain pending.
+    re-review found no remaining blocker. Final code commit `448efb7` passed
+    host verification and the blocking API 26/29/33/36 instrumentation matrix
+    in CI run
+    [`29689886647`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29689886647).
+    The API 37 16 KB job reproduced its approved non-blocking pre-test boot
+    timeout, and the workflow concluded successfully. Independent Claude Code
+    review and the user's formal M7 release decision remain pending.
 
 ## 16. Deferred Backlog
 
