@@ -1,6 +1,6 @@
 # Android Sideload Release Guide
 
-Status: M6 engineering gate passed; public release evidence remains pending
+Status: M6 passed; M7 reliability implementation and public release evidence remain pending
 
 This guide covers the signed APK workflow for the first side-loaded Android
 edition. It does not authorize a release by itself. The M6 test/review gate has
@@ -33,6 +33,8 @@ the staged diff before every release commit.
    .\gradlew.bat lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest
    ```
 
+   `verifyDebugApkPageAlignment` also runs the blocking arm64 ELF program-header
+   check; both ZIP alignment and every arm64 `LOAD.p_align` must satisfy 16 KB.
 3. Confirm the blocking device matrix is green on API 26, 29, 33, and 36.
    API 37 16 KB remains a non-blocking hosted-CI signal, but a successful
    Firebase Test Lab or physical 16 KB device run is mandatory before any tag or
@@ -75,13 +77,21 @@ the system locale. In light and dark system themes, exercise:
 - Gallery preview, Android share, and reuse as a reference image;
 - completion notification permission, audible/silent settings, and task
   diagnostics;
+- background a multi-task queue, lock the screen, and confirm the ongoing
+  foreground notification remains free of prompts, endpoints, URIs, and keys;
+- interrupt the process during one running and one queued task, then relaunch:
+  the running task must become `OutcomeUnknown`, the queued task may resume, and
+  neither request may be retried automatically;
+- cancel an active request from Tasks and confirm the transport call stops and
+  the foreground service exits after all work becomes terminal;
 - activity rotation while editing and while viewing every main screen;
 - API 26 legacy save permission and API 29+ scoped MediaStore save.
 
-The MVP is foreground-only. Android may kill the process after the user leaves
-the app; interrupted paid requests can become `OutcomeUnknown` and are never
-retried automatically. Controlled foreground work and reliable ongoing
-notifications remain M7 work and must be stated in release notes.
+M7 uses a `dataSync` foreground service with a mandatory ongoing notification.
+This improves survival after the user leaves or locks the device but cannot
+override force-stop, shutdown, platform time limits, or OEM process policy.
+Interrupted paid requests become `OutcomeUnknown` and are never retried
+automatically. State these limits in release notes.
 
 ## 5. Publish
 

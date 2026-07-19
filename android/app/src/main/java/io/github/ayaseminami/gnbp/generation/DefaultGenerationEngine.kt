@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -48,7 +49,7 @@ internal class DefaultGenerationEngine(
     private val referenceDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
-) : GenerationEngine {
+) : ManagedGenerationEngine {
     private val engineJob = SupervisorJob(externalScope.coroutineContext[Job])
     private val scope = CoroutineScope(externalScope.coroutineContext + engineJob + workerDispatcher)
     private val queue = Channel<TaskId>(Channel.UNLIMITED)
@@ -175,6 +176,39 @@ internal class DefaultGenerationEngine(
         activeCancellations.values.forEach(GenerationCancellation::cancel)
         queue.close()
         scope.cancel()
+    }
+
+    override suspend fun shutdownForInterruption() {
+        val interruptedTaskIds = stateMutex.withLock {
+            taskRepository.loadTasks()
+                .filter { task -> task.status == TaskStatus.Running }
+                .mapTo(mutableSetOf(), GenerationTask::id)
+        }
+        activeCancellations.values.forEach(GenerationCancellation::cancel)
+        engineJob.cancelAndJoin()
+        queue.close()
+        stateMutex.withLock {
+            interruptedTaskIds.forEach { taskId ->
+                val task = taskRepository.findTask(taskId) ?: return@forEach
+                if (
+                    task.status is TaskStatus.Succeeded ||
+                    task.status is TaskStatus.Cancelled
+                ) {
+                    return@forEach
+                }
+                taskRepository.updateTask(
+                    task.copy(
+                        status = TaskStatus.OutcomeUnknown(
+                            TaskOutcomeUnknownReason.ProcessInterrupted,
+                        ),
+                        finishedAtEpochMillis = nowEpochMillis(),
+                    ),
+                )
+            }
+            activeCancellations.clear()
+            requestedCancellations.clear()
+            snapshots.clear()
+        }
     }
 
     private suspend fun initialize() {

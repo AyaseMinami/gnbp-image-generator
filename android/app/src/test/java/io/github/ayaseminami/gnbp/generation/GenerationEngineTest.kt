@@ -265,6 +265,33 @@ class GenerationEngineTest {
     }
 
     @Test
+    fun `foreground interruption cancels active work before marking it unknown`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val provider = CancellationAwareProvider()
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("interrupted-running-task"),
+            now = { 700L },
+        )
+        try {
+            val taskId = (engine.enqueue(batchRequest()) as EnqueueResult.Accepted).taskIds.single()
+            provider.started.await()
+
+            engine.shutdownForInterruption()
+
+            assertEquals(
+                TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProcessInterrupted),
+                repository.findTask(taskId)?.status,
+            )
+            assertEquals(700L, repository.findTask(taskId)?.finishedAtEpochMillis)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `explicit retry rebuilds a persisted task after restart`() = runTest {
         val sourceId = TaskId("failed-before-restart")
         val request = taskRequestSnapshot().copy(

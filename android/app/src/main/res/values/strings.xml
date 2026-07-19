@@ -161,6 +161,11 @@
     <string name="notification_failure_message">打开应用查看安全诊断并决定是否重试。</string>
     <string name="notification_unknown_title">无法确认生成结果</string>
     <string name="notification_unknown_message">请求可能已经计费。打开应用确认后再决定是否重试。</string>
+    <string name="foreground_notification_channel_name">图像生成任务</string>
+    <string name="foreground_notification_channel_description">在后台继续处理已提交的图像生成任务</string>
+    <string name="foreground_notification_title">GNBP 正在生成图像</string>
+    <string name="foreground_notification_preparing">正在准备任务</string>
+    <string name="foreground_notification_progress">正在处理：%1$d；等待：%2$d</string>
     <plurals name="feedback_tasks_queued">
         <item quantity="other">已加入 %1$d 个任务</item>
     </plurals>

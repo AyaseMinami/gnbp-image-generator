@@ -8,26 +8,17 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.ayaseminami.gnbp.generation.AndroidGenerationProviderFactory
+import io.github.ayaseminami.gnbp.background.GenerationForegroundService
+import io.github.ayaseminami.gnbp.gnbpGraph
 import io.github.ayaseminami.gnbp.generation.CancelResult
-import io.github.ayaseminami.gnbp.generation.DefaultGenerationEngine
 import io.github.ayaseminami.gnbp.generation.EnqueueFailureReason
 import io.github.ayaseminami.gnbp.generation.EnqueueResult
 import io.github.ayaseminami.gnbp.generation.GenerationBatchRequest
-import io.github.ayaseminami.gnbp.generation.GenerationEngine
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.ReferenceAssetInput
-import io.github.ayaseminami.gnbp.generation.ReferencePreparer
 import io.github.ayaseminami.gnbp.generation.RetryResult
 import io.github.ayaseminami.gnbp.generation.TaskId
-import io.github.ayaseminami.gnbp.media.BoundedImagePreparer
-import io.github.ayaseminami.gnbp.media.ContentUriReferenceStore
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
-import io.github.ayaseminami.gnbp.media.ImagePreparationFailure
-import io.github.ayaseminami.gnbp.media.ImagePreparationResult
-import io.github.ayaseminami.gnbp.media.MediaAssetId
-import io.github.ayaseminami.gnbp.media.MediaStoreGeneratedAssetStore
-import io.github.ayaseminami.gnbp.persistence.GnbpPersistence
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
@@ -37,9 +28,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkMode
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,12 +38,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import io.github.ayaseminami.gnbp.ui.settings.ProfileTextField
 import io.github.ayaseminami.gnbp.ui.settings.ProfileTransportChoice
 import io.github.ayaseminami.gnbp.ui.settings.SettingsCoordinator
 import io.github.ayaseminami.gnbp.ui.settings.SettingsUiState
-import io.github.ayaseminami.gnbp.ui.notification.AndroidTaskCompletionNotifier
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionEvent
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
 
@@ -104,10 +91,9 @@ enum class GenerationPermission(val manifestPermission: String) {
 class GenerationViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
-    private val persistence = GnbpPersistence.create(application)
-    private val referenceStore = ContentUriReferenceStore.create(application)
-    private val engineReady = CompletableDeferred<GenerationEngine>()
-    private var engine: GenerationEngine? = null
+    private val applicationGraph = application.gnbpGraph
+    private val persistence = applicationGraph.persistence
+    private val generationRuntime = applicationGraph.generationRuntime
     private var currentSettings = AppSettings()
     private var promptEdited = false
     private val mutableUiState = MutableStateFlow(GenerationUiState())
@@ -116,7 +102,6 @@ class GenerationViewModel(
         extraBufferCapacity = 1,
     )
     private val completionTracker = TaskCompletionTracker()
-    private val completionNotifier = AndroidTaskCompletionNotifier(application)
     private val settingsCoordinator = SettingsCoordinator(
         profiles = persistence.profiles,
         prompts = persistence.prompts,
@@ -147,7 +132,17 @@ class GenerationViewModel(
                 }
             }
         }
-        viewModelScope.launch { initializeEngine(application) }
+        viewModelScope.launch { initializeState(application) }
+        viewModelScope.launch {
+            persistence.tasks.observeTasks().collect { taskList ->
+                mutableTasks.value = taskList
+                completionTracker.accept(taskList).forEach { event ->
+                    if (event is TaskCompletionEvent.Succeeded && currentSettings.showPreview) {
+                        mutablePreviewEvents.tryEmit(event.asset)
+                    }
+                }
+            }
+        }
         viewModelScope.launch {
             persistence.prompts.observePrompts().collect { prompts ->
                 mutableUiState.update { current ->
@@ -262,23 +257,28 @@ class GenerationViewModel(
                 return@launch
             }
             val result = try {
-                val readyEngine = engineReady.await()
-                val taskOwnedReferences = claimTaskOwnedReferences()
-                readyEngine.enqueue(
-                    GenerationBatchRequest(
-                        profileId = profile.id,
-                        prompt = form.prompt,
-                        parameters = parameters,
-                        references = taskOwnedReferences.map { asset ->
-                            ReferenceAssetInput(
-                                id = asset.id.value,
-                                displayName = asset.displayName,
-                                mimeType = asset.mimeType,
-                            )
-                        },
-                        count = form.batchCount,
-                    ),
-                )
+                generationRuntime.runCommand(
+                    startForegroundWork = {
+                        GenerationForegroundService.start(getApplication<Application>())
+                    },
+                ) { readyEngine ->
+                    val taskOwnedReferences = claimTaskOwnedReferences()
+                    readyEngine.enqueue(
+                        GenerationBatchRequest(
+                            profileId = profile.id,
+                            prompt = form.prompt,
+                            parameters = parameters,
+                            references = taskOwnedReferences.map { asset ->
+                                ReferenceAssetInput(
+                                    id = asset.id.value,
+                                    displayName = asset.displayName,
+                                    mimeType = asset.mimeType,
+                                )
+                            },
+                            count = form.batchCount,
+                        ),
+                    )
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -319,7 +319,19 @@ class GenerationViewModel(
 
     fun cancel(taskId: TaskId) {
         viewModelScope.launch {
-            when (engineReady.await().cancel(taskId)) {
+            val result = try {
+                generationRuntime.runCommand(
+                    startForegroundWork = { GenerationForegroundService.start(getApplication()) },
+                ) { engine -> engine.cancel(taskId) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                mutableUiState.update {
+                    it.copy(feedback = GenerationFeedback.TaskNotAvailable)
+                }
+                return@launch
+            }
+            when (result) {
                 CancelResult.NotFound,
                 CancelResult.AlreadyFinished,
                 -> mutableUiState.update { it.copy(feedback = GenerationFeedback.TaskNotAvailable) }
@@ -332,7 +344,19 @@ class GenerationViewModel(
 
     fun retry(taskId: TaskId) {
         viewModelScope.launch {
-            when (engineReady.await().retry(taskId)) {
+            val result = try {
+                generationRuntime.runCommand(
+                    startForegroundWork = { GenerationForegroundService.start(getApplication()) },
+                ) { engine -> engine.retry(taskId) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                mutableUiState.update {
+                    it.copy(feedback = GenerationFeedback.TaskNotAvailable)
+                }
+                return@launch
+            }
+            when (result) {
                 is RetryResult.Enqueued -> Unit
                 RetryResult.NotFound,
                 RetryResult.NotRetryable,
@@ -390,12 +414,10 @@ class GenerationViewModel(
     }
 
     override fun onCleared() {
-        engine?.close()
-        persistence.close()
         super.onCleared()
     }
 
-    private suspend fun initializeEngine(application: Application) {
+    private suspend fun initializeState(application: Application) {
         try {
             currentSettings = persistence.settings.observeSettings().first()
             mutableUiState.update { current ->
@@ -405,48 +427,15 @@ class GenerationViewModel(
                     batchCount = currentSettings.batchCount,
                 )
             }
-            val retainedAssetIds = persistence.tasks.loadTasks()
-                .flatMap { task -> task.request.references }
-                .map { reference -> MediaAssetId(reference.id) }
-                .toSet()
-            withContext(Dispatchers.IO) {
-                referenceStore.cleanupOrphanedCopies(retainedAssetIds, System.currentTimeMillis())
-            }
-            val createdEngine = DefaultGenerationEngine(
-                taskRepository = persistence.tasks,
-                providerFactory = AndroidGenerationProviderFactory(application),
-                generatedAssetStore = MediaStoreGeneratedAssetStore.create(application),
-                referencePreparer = ReferencePreparer { asset ->
-                    val durable = referenceStore.resolve(asset)
-                        ?: return@ReferencePreparer ImagePreparationResult.Failed(
-                            ImagePreparationFailure.SourceMissing,
-                        )
-                    durable.asReferenceImage(BoundedImagePreparer())
-                },
-                profileLoader = { profileId ->
-                    when (val loaded = persistence.profiles.loadProfile(profileId)) {
-                        is ProfileLoadResult.Found -> loaded.profile
-                        else -> null
-                    }
-                },
-                maxConcurrency = currentSettings.maxConcurrency,
-                externalScope = viewModelScope,
-            )
-            engine = createdEngine
-            engineReady.complete(createdEngine)
-            createdEngine.observeTasks().collect { taskList ->
-                mutableTasks.value = taskList
-                completionTracker.accept(taskList).forEach { event ->
-                    completionNotifier.notify(event, currentSettings)
-                    if (event is TaskCompletionEvent.Succeeded && currentSettings.showPreview) {
-                        mutablePreviewEvents.tryEmit(event.asset)
-                    }
-                }
+            val persistedTasks = persistence.tasks.loadTasks()
+            if (GenerationForegroundService.hasActiveTasks(persistedTasks)) {
+                GenerationForegroundService.start(application)
+            } else {
+                applicationGraph.cleanupReferences()
             }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            engineReady.completeExceptionally(error)
             mutableUiState.update {
                 it.copy(isLoading = false, feedback = GenerationFeedback.TaskNotAvailable)
             }

@@ -158,6 +158,26 @@ the blocking API 26/29/33/36 device matrix in CI run
 [`29681595718`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681595718).
 The user formally released the milestone on 2026-07-19.
 
+## Reliable Background Execution (M7)
+
+M7 moves the only production `GenerationEngine` out of the Activity/ViewModel
+lifecycle and into an application-scoped runtime controlled by a non-exported
+`dataSync` foreground service. Enqueue, cancellation, and explicit retry acquire
+a command lease and start foreground work before accessing that singleton. The
+ongoing notification contains only static status text and queued/running counts;
+it never includes prompts, profile names, endpoints, content URIs, or keys.
+Completion-notification preferences do not disable the mandatory foreground
+service notification.
+
+The service requests sticky restart and the Activity also resumes persisted
+active work when the user reopens the app. A recreated engine safely resumes
+`Queued` tasks. Any request that was `Running` when its process or service was
+interrupted becomes `OutcomeUnknown` and is never retried automatically. An
+orderly foreground-service timeout first cancels and joins active transport work
+before writing that terminal state. These mechanisms reduce Android lifecycle
+loss; they do not override force-stop, device shutdown, platform foreground-work
+limits, or OEM process policy.
+
 Host tests cover large images, revoked URI access, save rollback, external
 deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the
 instrumentation suite on API 26, 29, 33, and 36 emulators. API 37.0 only offers
@@ -176,8 +196,9 @@ entries aligned to 16 KB in the APK, and both arm64-v8a libraries use ELF
 `LOAD` segment `p_align = 0x4000`. The blocking
 `verifyDebugApkPageAlignment` Gradle task assembles the APK and runs
 `zipalign -c -P 16` so a future dependency cannot silently regress package
-alignment. This guard does not inspect ELF program headers; M7 must add a
-blocking check for arm64 `LOAD` segments with `p_align < 0x4000`. Before any tag
+alignment. It now depends on `verifyDebugArm64ElfPageAlignment`, which parses
+every packaged arm64 ELF program header and rejects `LOAD` segments with
+`p_align < 0x4000`. Before any tag
 release or application-store submission, the
 repository maintainer acting as release owner must obtain a successful API 37
 16 KB instrumentation run through Firebase Test Lab or a physical 16 KB device;

@@ -24,3 +24,7 @@ interface GenerationTaskRepository {
 
     suspend fun updateTask(task: GenerationTask)
 }
+
+internal interface ManagedGenerationEngine : GenerationEngine {
+    suspend fun shutdownForInterruption()
+}

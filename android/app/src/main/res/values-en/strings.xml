@@ -161,6 +161,11 @@
     <string name="notification_failure_message">Open the app for a safe diagnostic and retry options.</string>
     <string name="notification_unknown_title">Generation outcome unknown</string>
     <string name="notification_unknown_message">The request may have been billed. Open the app before deciding whether to retry.</string>
+    <string name="foreground_notification_channel_name">Image generation tasks</string>
+    <string name="foreground_notification_channel_description">Keeps submitted image-generation tasks running in the background</string>
+    <string name="foreground_notification_title">GNBP is generating images</string>
+    <string name="foreground_notification_preparing">Preparing generation tasks</string>
+    <string name="foreground_notification_progress">Running: %1$d; queued: %2$d</string>
     <plurals name="feedback_tasks_queued">
         <item quantity="one">%1$d task queued</item>
         <item quantity="other">%1$d tasks queued</item>

@@ -388,13 +388,23 @@ automated tests remain offline.
 
 ### M7 - Reliable Background Release
 
-- persist and reconcile task state;
-- implement controlled foreground work and notifications;
-- handle process death and uncertain paid-request outcomes;
-- validate URI persistence across restart;
+- move the single generation-engine owner from the Activity/ViewModel lifecycle
+  to an application-scoped runtime controlled only by a non-exported `dataSync`
+  foreground service;
+- start the service before accepting enqueue, cancel, or retry commands and keep
+  an ongoing, content-free notification visible while commands or tasks are
+  active;
+- request sticky service restart and resume durable `Queued` work after process
+  recreation, while reconciling every interrupted `Running` request as
+  `OutcomeUnknown` without automatic retry;
+- cancel and join active provider work before an orderly service timeout or
+  shutdown writes its final interruption state;
+- validate that task-owned reference copies and generated MediaStore results
+  remain addressable across Activity and process recreation;
 - add a blocking ELF program-header check that rejects arm64 native libraries
   whose `LOAD` segments have `p_align < 0x4000`;
-- complete privacy, signing, release, and store documentation as applicable.
+- complete privacy and signed side-load documentation. Store-specific policy
+  work remains out of scope until a store distribution channel is approved.
 
 Exit criteria: interruption scenarios cannot silently lose successful results or
 automatically duplicate an uncertain paid request.
@@ -580,7 +590,8 @@ long-term traceability.
    eight packaged `.so` entries pass `zipalign -c -P 16`, and the two arm64-v8a
    libraries have ELF `LOAD` segment `p_align = 0x4000`. CI now treats the APK
    alignment check as blocking. That task verifies APK package alignment only;
-   a future ELF program-header guard remains assigned to M7. On API 26-29,
+    M7 adds a second blocking guard that parses every packaged arm64 ELF
+    program header and rejects any `LOAD` segment below `p_align = 0x4000`. On API 26-29,
    Android does not expose a network-specific NAT64 prefix; the classifier can
    recognize the well-known `64:ff9b::/96` prefix but not a provider-specific
    prefix on those OS versions.
@@ -639,6 +650,18 @@ long-term traceability.
     passed host verification and the blocking API 26/29/33/36 device matrix;
     API 37 reproduced the approved non-blocking hosted-image failure. The user
     formally released M6 on 2026-07-19. M7 is the active milestone.
+14. The first M7 implementation moves engine ownership into an application
+    graph and a private sticky `dataSync` foreground service. Command leases
+    start foreground work before accessing the singleton engine; the service
+    posts only static progress counts, owns completion notifications, resumes
+    durable queued work, and uses an interruption shutdown path that cancels
+    and joins provider work before conservatively writing `OutcomeUnknown`.
+    Host tests cover singleton startup, restart after initialization failure,
+    idle versus interrupted shutdown, and active-work accounting. A device test
+    starts the real service and verifies its ongoing notification channel. The
+    existing APK alignment gate now also blocks arm64 ELF `LOAD` alignment below
+    16 KB. Full local, device-matrix, and independent review gates remain
+    pending.
 
 ## 16. Deferred Backlog
 
@@ -653,3 +676,6 @@ long-term traceability.
 - Preserve or clearly recover a pending permission-grant submission across
   Activity recreation. The current draft assets remain available, but automatic
   resubmission may require the user to press Generate again.
+- Apply a changed maximum-concurrency setting to an already-active runtime. The
+  M7 service uses the persisted value when it creates the engine; later changes
+  take effect after the current foreground runtime becomes idle and restarts.
