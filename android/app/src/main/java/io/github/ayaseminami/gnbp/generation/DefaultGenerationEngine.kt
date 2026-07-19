@@ -179,15 +179,14 @@ internal class DefaultGenerationEngine(
     }
 
     override suspend fun shutdownForInterruption() {
-        val interruptedTaskIds = stateMutex.withLock {
-            taskRepository.loadTasks()
-                .filter { task -> task.status == TaskStatus.Running }
-                .mapTo(mutableSetOf(), GenerationTask::id)
-        }
+        val interruptedTaskIds = activeCancellations.keys.toMutableSet()
         activeCancellations.values.forEach(GenerationCancellation::cancel)
         engineJob.cancelAndJoin()
         queue.close()
         stateMutex.withLock {
+            taskRepository.loadTasks()
+                .filter { task -> task.status == TaskStatus.Running }
+                .mapTo(interruptedTaskIds, GenerationTask::id)
             interruptedTaskIds.forEach { taskId ->
                 val task = taskRepository.findTask(taskId) ?: return@forEach
                 if (

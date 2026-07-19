@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import io.github.ayaseminami.gnbp.GnbpApplication
+import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.ui.notification.AndroidTaskCompletionNotifier
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
@@ -66,8 +67,14 @@ class GenerationForegroundService : Service() {
         serviceScope.cancel()
         if (!runtimeStopped) {
             runBlocking {
-                withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
+                val stopped = withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
                     applicationGraph.generationRuntime.stop(interrupted = !idleStopRequested)
+                    true
+                } == true
+                if (!stopped && !idleStopRequested) {
+                    withTimeoutOrNull(FALLBACK_RECONCILIATION_TIMEOUT_MILLIS) {
+                        reconcileForcedInterruption()
+                    }
                 }
             }
         }
@@ -142,17 +149,47 @@ class GenerationForegroundService : Service() {
     private fun interruptAndStop(startId: Int) {
         stopJob?.cancel()
         stopJob = serviceScope.launch {
-            applicationGraph.generationRuntime.stop(interrupted = true)
-            runtimeStopped = true
-            val settings = applicationGraph.persistence.settings.observeSettings().first()
-            val tasks = applicationGraph.persistence.tasks.loadTasks()
-            completionTracker.accept(tasks).forEach { event ->
-                completionNotifier.notify(event, settings)
+            try {
+                val stopped = try {
+                    withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
+                        applicationGraph.generationRuntime.stop(interrupted = true)
+                        true
+                    } == true
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    false
+                }
+                if (!stopped) runCatching { reconcileForcedInterruption() }
+                runCatching {
+                    val settings = applicationGraph.persistence.settings.observeSettings().first()
+                    val tasks = applicationGraph.persistence.tasks.loadTasks()
+                    completionTracker.accept(tasks).forEach { event ->
+                        completionNotifier.notify(event, settings)
+                    }
+                }
+            } finally {
+                runtimeStopped = true
+                idleStopRequested = true
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
             }
-            idleStopRequested = true
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelfResult(startId)
         }
+    }
+
+    private suspend fun reconcileForcedInterruption() {
+        applicationGraph.persistence.tasks.loadTasks()
+            .filter { task -> task.status == TaskStatus.Running }
+            .forEach { task ->
+                applicationGraph.persistence.tasks.updateTask(
+                    task.copy(
+                        status = TaskStatus.OutcomeUnknown(
+                            TaskOutcomeUnknownReason.ProcessInterrupted,
+                        ),
+                        finishedAtEpochMillis = System.currentTimeMillis(),
+                    ),
+                )
+            }
     }
 
     companion object {
@@ -167,6 +204,7 @@ class GenerationForegroundService : Service() {
             tasks.any { task -> task.status == TaskStatus.Queued || task.status == TaskStatus.Running }
 
         private const val IDLE_SETTLE_MILLIS = 500L
-        private const val SHUTDOWN_TIMEOUT_MILLIS = 5_000L
+        private const val SHUTDOWN_TIMEOUT_MILLIS = 4_000L
+        private const val FALLBACK_RECONCILIATION_TIMEOUT_MILLIS = 1_000L
     }
 }
