@@ -56,6 +56,11 @@ Android automated tests must remain offline. `local.properties`, signing
 stores, APK/AAB output, credentials, private endpoints, and generated images
 must not be committed.
 
+The release-owner procedure for a signed side-loaded APK is documented in
+`ANDROID-SIDELOAD-RELEASE.md`. Signing material remains outside the repository;
+the checked-in Android build stays unsigned for release until the owner invokes
+Android Studio's signing workflow.
+
 ## Versioning
 
 Desktop versions come from `APP_VERSION` in `app_info.py`. The window title, Qt

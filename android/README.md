@@ -2,12 +2,12 @@
 
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
 Image Generator. The offline-tested provider and transport contract slice and
-secure persistence are implemented. The M4 media input/output slice passed code
-review and its redefined API 26/29/33/36 device gate. M5 end-to-end generation
-workflow work is in progress. The Generate and Tasks screens now connect
-persisted profiles, production providers, durable references, and MediaStore
-outputs, but profile editing and release hardening are still incomplete; this
-is not a supported image-generation release.
+secure persistence are implemented. M4 media input/output and M5 end-to-end
+generation passed their independent reviews and API 26/29/33/36 device gates.
+M6 MVP completion is in progress. The current branch adds profile/prompt
+editing, Gallery actions, typed diagnostics, and best-effort completion
+notifications, but it is not a supported image-generation release until the M6
+gate is formally released.
 
 ## Toolchain
 
@@ -131,10 +131,29 @@ product-level IDs and asset references rather than Android `Uri`, `File`, or
 profile-persistence objects. The engine's provider and asset-store seams have
 offline fakes, including a Compose instrumentation workflow test.
 
-The Generate screen currently consumes profiles persisted by M3. Profile
-creation and advanced security editing remain part of M6 Settings; until a
-profile exists, submission is intentionally disabled. The reliable background
-execution and notification guarantees remain assigned to M7.
+The M5 workflow passed independent review, a manually authorized
+OpenAI-compatible provider smoke, and the user gate. Submission remains
+disabled until a profile exists and while the prompt is blank. The reliable
+background execution guarantees remain assigned to M7.
+
+## MVP Completion (M6)
+
+The M6 branch adds four primary views: Generate, Tasks, Gallery, and Settings.
+Settings owns API-profile CRUD, encrypted-key replacement, prompt presets,
+system-verified TLS, custom CA, pinned-certificate, explicitly acknowledged
+trust-all/cleartext modes, LAN opt-in, preview behavior, concurrency, and
+completion-notification choices. Unsafe profiles remain visibly marked on both
+Settings and Generate.
+
+Gallery derives results from persisted successful tasks and provides bounded
+thumbnails, preview, Android sharing, and reuse through the durable reference
+copy path. Task diagnostics map typed failures to localized guidance without
+showing provider text, prompts, endpoints, or secrets. Completion notifications
+are best-effort while the M6 process is alive; they do not replace M7 foreground
+work and process-death reconciliation.
+
+The signed side-loaded APK procedure and acceptance checklist are documented in
+[`../docs/ANDROID-SIDELOAD-RELEASE.md`](../docs/ANDROID-SIDELOAD-RELEASE.md).
 
 Host tests cover large images, revoked URI access, save rollback, external
 deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the

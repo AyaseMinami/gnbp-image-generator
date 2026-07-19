@@ -16,13 +16,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,18 +66,31 @@ import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
+import io.github.ayaseminami.gnbp.generation.TaskFailureReason
+import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
+import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
+import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
+import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.theme.GnbpTheme
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
+import io.github.ayaseminami.gnbp.ui.settings.SettingsActions
+import io.github.ayaseminami.gnbp.ui.settings.SettingsFailure
+import io.github.ayaseminami.gnbp.ui.settings.SettingsFeedback
+import io.github.ayaseminami.gnbp.ui.settings.SettingsScreen
+import io.github.ayaseminami.gnbp.ui.settings.SettingsUiState
 import java.text.DateFormat
 import java.util.Date
 
 private enum class AppSection {
     Generate,
     Tasks,
+    Gallery,
+    Settings,
 }
 
 internal const val GENERATION_SUBMIT_TEST_TAG = "generation-submit"
@@ -85,10 +99,13 @@ internal const val GENERATION_SUBMIT_TEST_TAG = "generation-submit"
 @Composable
 fun GenerationApp(
     state: GenerationUiState,
+    settingsState: SettingsUiState,
+    settingsActions: SettingsActions,
     tasks: List<GenerationTask>,
     references: List<DurableReferenceAsset>,
     failedReferenceCount: Int,
     onSelectProfile: (ProfileId) -> Unit,
+    onSelectPrompt: (PromptId?) -> Unit,
     onPromptChange: (String) -> Unit,
     onBatchCountChange: (Int) -> Unit,
     onGeminiAspectRatioChange: (String) -> Unit,
@@ -102,16 +119,26 @@ fun GenerationApp(
     onCancelTask: (TaskId) -> Unit,
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
+    onShareResult: (GeneratedAssetReference) -> Unit,
+    onReuseResult: (GeneratedAssetReference) -> Unit,
     onFeedbackShown: () -> Unit,
+    onSettingsFeedbackShown: () -> Unit,
 ) {
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.Generate.name) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
     val snackbarHostState = remember { SnackbarHostState() }
-    val feedbackMessage = state.feedback?.let { feedbackText(it) }
-    LaunchedEffect(feedbackMessage) {
-        if (feedbackMessage != null) {
-            snackbarHostState.showSnackbar(feedbackMessage)
-            onFeedbackShown()
+    val generationFeedbackMessage = state.feedback?.let { feedbackText(it) }
+    val settingsFeedbackMessage = settingsState.feedback?.let { settingsFeedbackText(it) }
+    LaunchedEffect(generationFeedbackMessage, settingsFeedbackMessage) {
+        when {
+            generationFeedbackMessage != null -> {
+                snackbarHostState.showSnackbar(generationFeedbackMessage)
+                onFeedbackShown()
+            }
+            settingsFeedbackMessage != null -> {
+                snackbarHostState.showSnackbar(settingsFeedbackMessage)
+                onSettingsFeedbackShown()
+            }
         }
     }
 
@@ -129,11 +156,7 @@ fun GenerationApp(
                                 text = {
                                     Text(
                                         stringResource(
-                                            if (section == AppSection.Generate) {
-                                                R.string.tab_generate
-                                            } else {
-                                                R.string.tab_tasks
-                                            },
+                                            section.labelResource(),
                                         ),
                                     )
                                 },
@@ -156,6 +179,7 @@ fun GenerationApp(
                         references = references,
                         failedReferenceCount = failedReferenceCount,
                         onSelectProfile = onSelectProfile,
+                        onSelectPrompt = onSelectPrompt,
                         onPromptChange = onPromptChange,
                         onBatchCountChange = onBatchCountChange,
                         onGeminiAspectRatioChange = onGeminiAspectRatioChange,
@@ -173,6 +197,19 @@ fun GenerationApp(
                         onRetryTask = onRetryTask,
                         onOpenResult = onOpenResult,
                     )
+                    AppSection.Gallery -> GalleryScreen(
+                        tasks = tasks,
+                        onOpenResult = onOpenResult,
+                        onShareResult = onShareResult,
+                        onReuseResult = { asset ->
+                            onReuseResult(asset)
+                            selectedSectionName = AppSection.Generate.name
+                        },
+                    )
+                    AppSection.Settings -> SettingsScreen(
+                        state = settingsState,
+                        actions = settingsActions,
+                    )
                 }
             }
         }
@@ -185,6 +222,7 @@ private fun GenerateScreen(
     references: List<DurableReferenceAsset>,
     failedReferenceCount: Int,
     onSelectProfile: (ProfileId) -> Unit,
+    onSelectPrompt: (PromptId?) -> Unit,
     onPromptChange: (String) -> Unit,
     onBatchCountChange: (Int) -> Unit,
     onGeminiAspectRatioChange: (String) -> Unit,
@@ -211,6 +249,27 @@ private fun GenerateScreen(
             optionLabel = { it.name },
             enabled = !state.isLoading && state.profiles.isNotEmpty() && !state.isSubmitting,
             onSelect = { onSelectProfile(it.id) },
+        )
+        if (selectedProfile?.isUnsafe == true) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.generation_unsafe_profile_warning),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        PromptPresetPicker(
+            prompts = state.prompts,
+            selectedPromptId = state.selectedPromptId,
+            enabled = !state.isSubmitting,
+            onSelect = onSelectPrompt,
         )
         OutlinedTextField(
             value = state.prompt,
@@ -348,7 +407,7 @@ private fun GenerateScreen(
         }
         Button(
             onClick = onSubmit,
-            enabled = !state.isSubmitting && selectedProfile != null,
+            enabled = !state.isSubmitting && selectedProfile != null && state.prompt.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(GENERATION_SUBMIT_TEST_TAG),
@@ -367,6 +426,26 @@ private fun GenerateScreen(
         }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+@Composable
+private fun PromptPresetPicker(
+    prompts: List<PromptPreset>,
+    selectedPromptId: PromptId?,
+    enabled: Boolean,
+    onSelect: (PromptId?) -> Unit,
+) {
+    val noPresetLabel = stringResource(R.string.no_prompt_preset)
+    val selected = prompts.firstOrNull { it.id == selectedPromptId }
+    val options = remember(prompts) { listOf<PromptPreset?>(null) + prompts }
+    OptionPicker(
+        label = stringResource(R.string.prompt_preset_label),
+        selected = selected?.name ?: noPresetLabel,
+        options = options,
+        optionLabel = { it?.name ?: noPresetLabel },
+        enabled = enabled,
+        onSelect = { onSelect(it?.id) },
+    )
 }
 
 @Composable
@@ -513,7 +592,7 @@ private fun TaskCard(
                     }
                     is TaskStatus.Succeeded -> IconButton(onClick = { onOpenResult(status.asset) }) {
                         Icon(
-                            Icons.Default.OpenInNew,
+                            Icons.AutoMirrored.Filled.OpenInNew,
                             contentDescription = stringResource(R.string.open_result),
                         )
                     }
@@ -546,6 +625,20 @@ private fun TaskCard(
                 Text(
                     text = stringResource(R.string.task_unknown_warning),
                     color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            taskDiagnostic(task.status)?.let { diagnostic ->
+                Text(
+                    text = diagnostic,
+                    color = if (
+                        task.status is TaskStatus.Failed ||
+                        task.status is TaskStatus.OutcomeUnknown
+                    ) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -618,6 +711,40 @@ private fun taskStatusColor(status: TaskStatus): Color = when (status) {
 }
 
 @Composable
+private fun taskDiagnostic(status: TaskStatus): String? = when (status) {
+    is TaskStatus.Failed -> stringResource(
+        when (status.reason) {
+            TaskFailureReason.ProviderUnavailable -> R.string.task_error_provider_unavailable
+            TaskFailureReason.InvalidRequest -> R.string.task_error_invalid_request
+            TaskFailureReason.Blocked -> R.string.task_error_blocked
+            TaskFailureReason.HttpStatus -> R.string.task_error_http_status
+            TaskFailureReason.Transport -> R.string.task_error_transport
+            TaskFailureReason.MalformedResponse -> R.string.task_error_malformed_response
+            TaskFailureReason.NoImageData -> R.string.task_error_no_image
+            TaskFailureReason.ReferenceUnavailable -> R.string.task_error_reference_unavailable
+            TaskFailureReason.AssetSaveFailed -> R.string.task_error_save_failed
+        },
+    )
+    is TaskStatus.Cancelled -> stringResource(
+        when (status.reason) {
+            TaskCancellationReason.UserRequested -> R.string.task_cancelled_by_user
+            TaskCancellationReason.ProcessInterruptedBeforeStart ->
+                R.string.task_cancelled_process_interrupted
+        },
+    )
+    is TaskStatus.OutcomeUnknown -> stringResource(
+        when (status.reason) {
+            TaskOutcomeUnknownReason.ProviderResponseUnknown -> R.string.task_unknown_provider
+            TaskOutcomeUnknownReason.ProcessInterrupted -> R.string.task_unknown_process_interrupted
+        },
+    )
+    TaskStatus.Queued,
+    TaskStatus.Running,
+    is TaskStatus.Succeeded,
+    -> null
+}
+
+@Composable
 private fun feedbackText(feedback: GenerationFeedback): String = when (feedback) {
     is GenerationFeedback.Queued -> pluralStringResource(
         R.plurals.feedback_tasks_queued,
@@ -631,6 +758,44 @@ private fun feedbackText(feedback: GenerationFeedback): String = when (feedback)
     GenerationFeedback.ReferencePreparationFailed -> stringResource(R.string.feedback_reference_failed)
     GenerationFeedback.TaskNotAvailable -> stringResource(R.string.feedback_task_unavailable)
     GenerationFeedback.PermissionDenied -> stringResource(R.string.feedback_permission_denied)
+    GenerationFeedback.ResultUnavailable -> stringResource(R.string.feedback_result_unavailable)
+}
+
+@Composable
+private fun settingsFeedbackText(feedback: SettingsFeedback): String? = when (feedback) {
+    SettingsFeedback.ProfileSaved -> stringResource(R.string.settings_feedback_profile_saved)
+    SettingsFeedback.ProfileDeleted -> stringResource(R.string.settings_feedback_profile_deleted)
+    SettingsFeedback.PromptSaved -> stringResource(R.string.settings_feedback_prompt_saved)
+    SettingsFeedback.PromptDeleted -> stringResource(R.string.settings_feedback_prompt_deleted)
+    SettingsFeedback.CertificateImported ->
+        stringResource(R.string.settings_feedback_certificate_imported)
+    is SettingsFeedback.Failed -> stringResource(
+        when (feedback.reason) {
+            SettingsFailure.InvalidName -> R.string.settings_error_invalid_name
+            SettingsFailure.InvalidEndpoint -> R.string.settings_error_invalid_endpoint
+            SettingsFailure.InvalidModel -> R.string.settings_error_invalid_model
+            SettingsFailure.InvalidApiKey -> R.string.settings_error_invalid_api_key
+            SettingsFailure.MissingCertificate -> R.string.settings_error_missing_certificate
+            SettingsFailure.InvalidCertificate -> R.string.settings_error_invalid_certificate
+            SettingsFailure.InvalidPin -> R.string.settings_error_invalid_pin
+            SettingsFailure.UnsafeAcknowledgementRequired -> R.string.settings_error_unsafe_ack
+            SettingsFailure.AuthorityChangeRequiresSecurityReset ->
+                R.string.settings_error_authority_reset
+            SettingsFailure.SecretUnavailable -> R.string.settings_error_secret_unavailable
+            SettingsFailure.ProfileUnavailable -> R.string.settings_error_profile_unavailable
+            SettingsFailure.InvalidPrompt -> R.string.settings_error_invalid_prompt
+            SettingsFailure.StorageUnavailable -> R.string.settings_error_storage
+            SettingsFailure.NotificationPermissionDenied ->
+                R.string.settings_error_notification_permission
+        },
+    )
+}
+
+private fun AppSection.labelResource(): Int = when (this) {
+    AppSection.Generate -> R.string.tab_generate
+    AppSection.Tasks -> R.string.tab_tasks
+    AppSection.Gallery -> R.string.tab_gallery
+    AppSection.Settings -> R.string.tab_settings
 }
 
 private val GEMINI_ASPECT_RATIOS = listOf("1:1", "4:5", "3:4", "2:3", "9:16", "4:3", "16:9", "21:9")

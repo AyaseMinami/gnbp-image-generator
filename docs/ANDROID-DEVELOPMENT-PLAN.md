@@ -1,6 +1,6 @@
 # Android Development Plan
 
-Status: Approved; M4 passed; M5 ready for user gate
+Status: Approved; M5 passed; M6 implementation complete; device/review gate pending
 Date: 2026-07-19
 
 ## 1. Objective
@@ -612,7 +612,20 @@ long-term traceability.
     passed through the Android provider and transport implementation. The
     opt-in Gradle task remains excluded from default tests and CI; its reports
     contained no API key, endpoint, model, prompt, provider message, or image
-    bytes. M5 now awaits the user's formal gate decision.
+    bytes. Claude Code independently verified the ignored smoke report and the
+    user formally released M5 on 2026-07-19. M6 is the active milestone.
+11. M6 closes the predictable blank-prompt ownership case by disabling Submit
+    until the prompt is non-blank while retaining engine-side validation. The
+    remaining permission-dialog recreation caveat stays deferred because it
+    does not delete the draft asset or risk an automatic paid retry.
+12. The M6 implementation adds profile and prompt CRUD, every reviewed
+    binding-scoped transport mode, Gallery preview/share/reference reuse,
+    localized typed diagnostics, opt-in completion notifications, bounded
+    thumbnails, state-restoration UI coverage, and the signed side-load guide.
+    The local gate passed 100 offline Android tests, lint with zero errors,
+    instrumentation APK compilation, the network-construction chokepoint, APK
+    16 KB package alignment, and all 8 desktop tests. The blocking API
+    26/29/33/36 device matrix and independent review remain pending.
 
 ## 16. Deferred Backlog
 
@@ -624,9 +637,6 @@ long-term traceability.
 - Reassess at-rest privacy before release. The MVP intentionally keeps prompts
   and sanitized reference display names as plaintext in the app-private Room
   database; API keys remain encrypted and never enter task persistence.
-- Prevent locally predictable enqueue rejection from orphaning newly claimed
-  reference assets. M6 should at minimum disable submission for a blank prompt;
-  the engine remains the final validation authority.
 - Preserve or clearly recover a pending permission-grant submission across
   Activity recreation. The current draft assets remain available, but automatic
   resubmission may require the user to press Generate again.

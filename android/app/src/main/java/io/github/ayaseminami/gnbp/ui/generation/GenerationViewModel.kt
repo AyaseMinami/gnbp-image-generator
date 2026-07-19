@@ -32,6 +32,8 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
+import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
+import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkMode
@@ -43,12 +45,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import io.github.ayaseminami.gnbp.ui.settings.ProfileTextField
+import io.github.ayaseminami.gnbp.ui.settings.ProfileTransportChoice
+import io.github.ayaseminami.gnbp.ui.settings.SettingsCoordinator
+import io.github.ayaseminami.gnbp.ui.settings.SettingsUiState
+import io.github.ayaseminami.gnbp.ui.notification.AndroidTaskCompletionNotifier
+import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionEvent
+import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
 
 data class GenerationUiState(
     val profiles: List<ProfileSummary> = emptyList(),
     val selectedProfileId: ProfileId? = null,
+    val prompts: List<PromptPreset> = emptyList(),
+    val selectedPromptId: PromptId? = null,
     val prompt: String = "",
     val batchCount: Int = AppSettings.DEFAULT_BATCH_COUNT,
     val geminiAspectRatio: String = "3:4",
@@ -77,6 +91,8 @@ sealed interface GenerationFeedback {
     data object TaskNotAvailable : GenerationFeedback
 
     data object PermissionDenied : GenerationFeedback
+
+    data object ResultUnavailable : GenerationFeedback
 }
 
 @SuppressLint("InlinedApi")
@@ -93,11 +109,26 @@ class GenerationViewModel(
     private val engineReady = CompletableDeferred<GenerationEngine>()
     private var engine: GenerationEngine? = null
     private var currentSettings = AppSettings()
+    private var promptEdited = false
     private val mutableUiState = MutableStateFlow(GenerationUiState())
     private val mutableTasks = MutableStateFlow<List<GenerationTask>>(emptyList())
+    private val mutablePreviewEvents = MutableSharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>(
+        extraBufferCapacity = 1,
+    )
+    private val completionTracker = TaskCompletionTracker()
+    private val completionNotifier = AndroidTaskCompletionNotifier(application)
+    private val settingsCoordinator = SettingsCoordinator(
+        profiles = persistence.profiles,
+        prompts = persistence.prompts,
+        settings = persistence.settings,
+        scope = viewModelScope,
+    )
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
     val tasks: StateFlow<List<GenerationTask>> = mutableTasks.asStateFlow()
+    val settingsState: StateFlow<SettingsUiState> = settingsCoordinator.state
+    val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
+        mutablePreviewEvents.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -117,6 +148,24 @@ class GenerationViewModel(
             }
         }
         viewModelScope.launch { initializeEngine(application) }
+        viewModelScope.launch {
+            persistence.prompts.observePrompts().collect { prompts ->
+                mutableUiState.update { current ->
+                    current.copy(prompts = prompts).restorePersistedPromptIfNeeded()
+                }
+            }
+        }
+        viewModelScope.launch {
+            persistence.settings.observeSettings().collect { settings ->
+                currentSettings = settings
+                mutableUiState.update { current ->
+                    current.copy(
+                        selectedPromptId = settings.selectedPromptId
+                            ?.takeIf { id -> current.prompts.any { it.id == id } },
+                    ).restorePersistedPromptIfNeeded()
+                }
+            }
+        }
     }
 
     fun selectProfile(id: ProfileId) {
@@ -124,7 +173,28 @@ class GenerationViewModel(
     }
 
     fun updatePrompt(value: String) {
-        mutableUiState.update { it.copy(prompt = value, feedback = null) }
+        val shouldClearPersistedPreset = mutableUiState.value.selectedPromptId != null ||
+            currentSettings.selectedPromptId != null
+        promptEdited = true
+        mutableUiState.update { it.copy(prompt = value, selectedPromptId = null, feedback = null) }
+        if (shouldClearPersistedPreset) {
+            currentSettings = currentSettings.copy(selectedPromptId = null)
+            persistSettingsBestEffort(currentSettings)
+        }
+    }
+
+    fun selectPrompt(id: PromptId?) {
+        promptEdited = true
+        val preset = id?.let { selected -> mutableUiState.value.prompts.firstOrNull { it.id == selected } }
+        mutableUiState.update {
+            it.copy(
+                selectedPromptId = preset?.id,
+                prompt = preset?.content ?: it.prompt,
+                feedback = null,
+            )
+        }
+        currentSettings = currentSettings.copy(selectedPromptId = preset?.id)
+        persistSettingsBestEffort(currentSettings)
     }
 
     fun updateBatchCount(value: Int) {
@@ -276,10 +346,47 @@ class GenerationViewModel(
         mutableUiState.update { it.copy(feedback = null) }
     }
 
+    fun newProfile() = settingsCoordinator.newProfile()
+    fun editProfile(id: ProfileId) = settingsCoordinator.editProfile(id)
+    fun deleteProfile(id: ProfileId) = settingsCoordinator.deleteProfile(id)
+    fun cancelProfileEditor() = settingsCoordinator.cancelProfileEditor()
+    fun updateProfileText(field: ProfileTextField, value: String) =
+        settingsCoordinator.updateProfileText(field, value)
+    fun updateProviderKind(kind: ProviderKind) = settingsCoordinator.updateProviderKind(kind)
+    fun updateTransportChoice(choice: ProfileTransportChoice) =
+        settingsCoordinator.updateTransportChoice(choice)
+    fun updateAllowHostnameMismatch(value: Boolean) =
+        settingsCoordinator.updateAllowHostnameMismatch(value)
+    fun updateAllowLan(value: Boolean) = settingsCoordinator.updateAllowLan(value)
+    fun updateUnsafeAcknowledgement(value: Boolean) =
+        settingsCoordinator.updateUnsafeAcknowledgement(value)
+    fun importCertificate(bytes: ByteArray) = settingsCoordinator.importCertificate(bytes)
+    fun certificateImportFailed() = settingsCoordinator.certificateImportFailed()
+    fun clearCertificates() = settingsCoordinator.clearCertificates()
+    fun saveProfile() = settingsCoordinator.saveProfile()
+    fun newPromptPreset() = settingsCoordinator.newPrompt()
+    fun editPromptPreset(id: PromptId) = settingsCoordinator.editPrompt(id)
+    fun deletePromptPreset(id: PromptId) = settingsCoordinator.deletePrompt(id)
+    fun updatePromptPresetName(value: String) = settingsCoordinator.updatePromptName(value)
+    fun updatePromptPresetContent(value: String) = settingsCoordinator.updatePromptContent(value)
+    fun cancelPromptEditor() = settingsCoordinator.cancelPromptEditor()
+    fun savePromptPreset() = settingsCoordinator.savePrompt()
+    fun updateMaxConcurrency(value: Int) = settingsCoordinator.updateMaxConcurrency(value)
+    fun updateShowPreview(value: Boolean) = settingsCoordinator.updateShowPreview(value)
+    fun updateCompletionNotifications(value: Boolean) =
+        settingsCoordinator.updateCompletionNotifications(value)
+    fun updateSoundNotification(value: Boolean) = settingsCoordinator.updateSoundNotification(value)
+    fun notificationPermissionDenied() = settingsCoordinator.notificationPermissionDenied()
+    fun clearSettingsFeedback() = settingsCoordinator.clearFeedback()
+
     fun permissionDenied() {
         mutableUiState.update {
             it.copy(isSubmitting = false, feedback = GenerationFeedback.PermissionDenied)
         }
+    }
+
+    fun resultUnavailable() {
+        mutableUiState.update { it.copy(feedback = GenerationFeedback.ResultUnavailable) }
     }
 
     override fun onCleared() {
@@ -294,6 +401,7 @@ class GenerationViewModel(
             mutableUiState.update { current ->
                 current.copy(
                     selectedProfileId = current.selectedProfileId ?: currentSettings.selectedProfileId,
+                    selectedPromptId = currentSettings.selectedPromptId,
                     batchCount = currentSettings.batchCount,
                 )
             }
@@ -326,13 +434,41 @@ class GenerationViewModel(
             )
             engine = createdEngine
             engineReady.complete(createdEngine)
-            createdEngine.observeTasks().collect { taskList -> mutableTasks.value = taskList }
+            createdEngine.observeTasks().collect { taskList ->
+                mutableTasks.value = taskList
+                completionTracker.accept(taskList).forEach { event ->
+                    completionNotifier.notify(event, currentSettings)
+                    if (event is TaskCompletionEvent.Succeeded && currentSettings.showPreview) {
+                        mutablePreviewEvents.tryEmit(event.asset)
+                    }
+                }
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             engineReady.completeExceptionally(error)
             mutableUiState.update {
                 it.copy(isLoading = false, feedback = GenerationFeedback.TaskNotAvailable)
+            }
+        }
+    }
+
+    private fun GenerationUiState.restorePersistedPromptIfNeeded(): GenerationUiState {
+        if (promptEdited) return this
+        val preset = currentSettings.selectedPromptId
+            ?.let { selected -> prompts.firstOrNull { it.id == selected } }
+            ?: return copy(selectedPromptId = null)
+        return copy(selectedPromptId = preset.id, prompt = preset.content)
+    }
+
+    private fun persistSettingsBestEffort(snapshot: AppSettings) {
+        viewModelScope.launch {
+            try {
+                persistence.settings.saveSettings(snapshot)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                Unit
             }
         }
     }

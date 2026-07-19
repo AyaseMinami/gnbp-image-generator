@@ -28,6 +28,17 @@ import org.junit.Test
 
 class DataStoreSettingsRepositoryTest {
     @Test
+    fun `settings string representation redacts persisted selections`() {
+        val settings = AppSettings(
+            selectedProfileId = ProfileId("private-profile-id"),
+            selectedPromptId = PromptId("private-prompt-id"),
+        )
+
+        assertFalse(settings.toString().contains("private-profile-id"))
+        assertFalse(settings.toString().contains("private-prompt-id"))
+    }
+
+    @Test
     fun `empty settings expose stable defaults and persist across instances`() = runTest {
         val storage = InMemoryPreferencesStorage()
         val firstJob = SupervisorJob()
@@ -47,6 +58,7 @@ class DataStoreSettingsRepositoryTest {
                 batchCount = 3,
                 maxConcurrency = 2,
                 showPreview = false,
+                completionNotifications = false,
                 soundNotification = false,
             ),
         )
@@ -66,6 +78,7 @@ class DataStoreSettingsRepositoryTest {
         assertEquals(3, reloaded.batchCount)
         assertEquals(2, reloaded.maxConcurrency)
         assertFalse(reloaded.showPreview)
+        assertFalse(reloaded.completionNotifications)
         assertFalse(reloaded.soundNotification)
         secondJob.cancelAndJoin()
     }
@@ -90,6 +103,10 @@ class DataStoreSettingsRepositoryTest {
         assertEquals(5, migrated.batchCount)
         assertEquals(AppSettings.DEFAULT_MAX_CONCURRENCY, migrated.maxConcurrency)
         assertEquals(AppSettings.DEFAULT_SHOW_PREVIEW, migrated.showPreview)
+        assertEquals(
+            AppSettings.DEFAULT_COMPLETION_NOTIFICATIONS,
+            migrated.completionNotifications,
+        )
         assertEquals(AppSettings.DEFAULT_SOUND_NOTIFICATION, migrated.soundNotification)
         migratedJob.cancelAndJoin()
     }

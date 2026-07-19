@@ -1,8 +1,10 @@
 package io.github.ayaseminami.gnbp.media
 
 import android.net.Uri
+import androidx.core.net.toUri
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
 import io.github.ayaseminami.gnbp.provider.ReferenceImage
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import java.io.File
 
 @JvmInline
@@ -32,6 +34,14 @@ data class AssetRef(
         "AssetRef(id=[REDACTED], uri=[REDACTED], displayName=[REDACTED], " +
             "mimeType=$mimeType, byteSize=$byteSize)"
 }
+
+fun GeneratedAssetReference.toAssetRef() = AssetRef(
+    id = MediaAssetId(id),
+    uri = location.toUri(),
+    displayName = displayName,
+    mimeType = mimeType,
+    byteSize = byteSize,
+)
 
 data class DurableReferenceAsset(
     val id: MediaAssetId,

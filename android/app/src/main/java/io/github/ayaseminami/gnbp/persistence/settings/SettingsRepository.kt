@@ -21,6 +21,7 @@ data class AppSettings(
     val batchCount: Int = DEFAULT_BATCH_COUNT,
     val maxConcurrency: Int = DEFAULT_MAX_CONCURRENCY,
     val showPreview: Boolean = DEFAULT_SHOW_PREVIEW,
+    val completionNotifications: Boolean = DEFAULT_COMPLETION_NOTIFICATIONS,
     val soundNotification: Boolean = DEFAULT_SOUND_NOTIFICATION,
 ) {
     init {
@@ -30,10 +31,17 @@ data class AppSettings(
         }
     }
 
+    override fun toString(): String =
+        "AppSettings(selectedProfileId=[REDACTED], selectedPromptId=[REDACTED], " +
+            "batchCount=$batchCount, maxConcurrency=$maxConcurrency, showPreview=$showPreview, " +
+            "completionNotifications=$completionNotifications, " +
+            "soundNotification=$soundNotification)"
+
     companion object {
         const val DEFAULT_BATCH_COUNT = 1
         const val DEFAULT_MAX_CONCURRENCY = 1
         const val DEFAULT_SHOW_PREVIEW = true
+        const val DEFAULT_COMPLETION_NOTIFICATIONS = false
         const val DEFAULT_SOUND_NOTIFICATION = true
         const val MAX_BATCH_COUNT = 16
         const val MAX_CONCURRENCY = 2
@@ -64,6 +72,7 @@ class DataStoreSettingsRepository(
             preferences[SettingsKeys.BATCH_COUNT] = settings.batchCount
             preferences[SettingsKeys.MAX_CONCURRENCY] = settings.maxConcurrency
             preferences[SettingsKeys.SHOW_PREVIEW] = settings.showPreview
+            preferences[SettingsKeys.COMPLETION_NOTIFICATIONS] = settings.completionNotifications
             preferences[SettingsKeys.SOUND_NOTIFICATION] = settings.soundNotification
             preferences[SettingsKeys.SCHEMA_VERSION] = SettingsDataMigration.CURRENT_SCHEMA_VERSION
         }
@@ -76,6 +85,7 @@ class SettingsDataMigration : DataMigration<Preferences> {
             currentData[SettingsKeys.BATCH_COUNT] == null ||
             currentData[SettingsKeys.MAX_CONCURRENCY] == null ||
             currentData[SettingsKeys.SHOW_PREVIEW] == null ||
+            currentData[SettingsKeys.COMPLETION_NOTIFICATIONS] == null ||
             currentData[SettingsKeys.SOUND_NOTIFICATION] == null
 
     override suspend fun migrate(currentData: Preferences): Preferences =
@@ -89,6 +99,10 @@ class SettingsDataMigration : DataMigration<Preferences> {
             if (this[SettingsKeys.SHOW_PREVIEW] == null) {
                 this[SettingsKeys.SHOW_PREVIEW] = AppSettings.DEFAULT_SHOW_PREVIEW
             }
+            if (this[SettingsKeys.COMPLETION_NOTIFICATIONS] == null) {
+                this[SettingsKeys.COMPLETION_NOTIFICATIONS] =
+                    AppSettings.DEFAULT_COMPLETION_NOTIFICATIONS
+            }
             if (this[SettingsKeys.SOUND_NOTIFICATION] == null) {
                 this[SettingsKeys.SOUND_NOTIFICATION] = AppSettings.DEFAULT_SOUND_NOTIFICATION
             }
@@ -98,7 +112,7 @@ class SettingsDataMigration : DataMigration<Preferences> {
     override suspend fun cleanUp() = Unit
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
     }
 }
 
@@ -109,6 +123,7 @@ internal object SettingsKeys {
     val BATCH_COUNT = intPreferencesKey("batch_count")
     val MAX_CONCURRENCY = intPreferencesKey("max_concurrency")
     val SHOW_PREVIEW = booleanPreferencesKey("show_preview")
+    val COMPLETION_NOTIFICATIONS = booleanPreferencesKey("completion_notifications")
     val SOUND_NOTIFICATION = booleanPreferencesKey("sound_notification")
 }
 
@@ -120,5 +135,7 @@ private fun Preferences.toAppSettings(): AppSettings = AppSettings(
     maxConcurrency = (this[SettingsKeys.MAX_CONCURRENCY] ?: AppSettings.DEFAULT_MAX_CONCURRENCY)
         .coerceIn(1, AppSettings.MAX_CONCURRENCY),
     showPreview = this[SettingsKeys.SHOW_PREVIEW] ?: AppSettings.DEFAULT_SHOW_PREVIEW,
+    completionNotifications = this[SettingsKeys.COMPLETION_NOTIFICATIONS]
+        ?: AppSettings.DEFAULT_COMPLETION_NOTIFICATIONS,
     soundNotification = this[SettingsKeys.SOUND_NOTIFICATION] ?: AppSettings.DEFAULT_SOUND_NOTIFICATION,
 )
