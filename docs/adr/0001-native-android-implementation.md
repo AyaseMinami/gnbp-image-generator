@@ -3,6 +3,10 @@
 Status: Accepted
 Date: 2026-07-17
 
+Implementation outcome: M1-M7 delivered the native application and passed their
+independent review gates on 2026-07-19. Public signed-APK evidence remains a
+separate release gate.
+
 ## Context
 
 GNBP Image Generator currently has a Python 3.11 and PySide6 Windows
@@ -122,9 +126,9 @@ Negative consequences:
 - a later iOS commitment may cause Flutter or Kotlin Multiplatform to be
   reconsidered after native Android work already exists.
 
-## Validation And Reconsideration Triggers
+## Validation Outcome And Reconsideration Triggers
 
-Validate this decision during M0 by confirming:
+M0 validated this decision by confirming:
 
 - Android is the only committed mobile target for the first release;
 - relay compatibility can be implemented within acceptable Android security and
@@ -132,6 +136,11 @@ Validate this decision during M0 by confirming:
 - contract fixtures cover the provider behavior that would otherwise motivate
   source reuse;
 - the team accepts independent platform releases and implementations.
+
+M1-M7 subsequently validated the implementation shape: shared redacted fixtures
+cover both providers, Android owns platform media/security/lifecycle behavior,
+and `GenerationEngine` remains product-facing rather than leaking Android,
+persistence, or secret-bearing types.
 
 Reconsider this ADR if:
 

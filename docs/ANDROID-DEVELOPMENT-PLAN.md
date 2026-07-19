@@ -1,19 +1,19 @@
 # Android Development Plan
 
-Status: Approved; M7 passed; public release evidence remains pending
+Status: Implemented through M7 and approved; public release evidence remains pending
 Date: 2026-07-19
 
 ## 1. Objective
 
-Build an Android edition of GNBP Image Generator as a native mobile application.
-The Android edition should preserve the product's generation capabilities and
+This plan delivered an Android edition of GNBP Image Generator as a native
+mobile application through M7. The Android edition preserves the product's generation capabilities and
 observable behavior where that behavior still makes sense on mobile. It is not
 a source-level port of the Python/PySide6 implementation.
 
-The Android project will live in `android/` as a self-contained Gradle project.
-The existing Windows application remains at the repository root during the
-initial Android work. Shared behavior specifications and redacted fixtures will
-live outside either platform implementation.
+The Android project lives in `android/` as a self-contained Gradle project. The
+existing Windows application remains at the repository root. Shared behavior
+specifications and redacted fixtures live outside either platform
+implementation.
 
 The platform choice and rejected alternatives are recorded in
 [`adr/0001-native-android-implementation.md`](adr/0001-native-android-implementation.md).
@@ -30,14 +30,21 @@ That ADR was accepted by the user during M0.
   implementation.
 - Mobile UI and platform behavior may differ when direct parity would produce a
   poor Android experience.
-- HTTPS certificate verification is secure by default. Compatibility behavior
-  for relay services requires an explicit design decision before implementation.
+- HTTPS certificate verification is secure by default. Relay compatibility is
+  governed by the accepted transport-security specification and exact
+  profile/authority binding checks.
 - API 37 local-network permission, certificate transparency, ECH, and localhost
   behavior are part of the relay design rather than release hardening.
 - Paid generation requests must not be retried automatically when their outcome
   is unknown.
 
 ## 3. Delivery Targets
+
+M1-M7 and their independent review gates are complete. The targets and original
+post-M0 estimates below are retained as the approved delivery record; they do
+not imply that an Android tag or signed public APK has been released. Remaining
+release evidence is defined in Section 15 and
+`ANDROID-SIDELOAD-RELEASE.md`.
 
 All estimates in this section start after M0 decisions are resolved. They assume
 the selected relay TLS behavior is technically viable and exclude external
@@ -85,7 +92,8 @@ with Kotlin and Compose.
 - durable access to selected input images;
 - cancellation of active HTTP calls;
 - network, storage, low-memory, rotation, and process-restart tests;
-- signed release build, privacy documentation, and release checklist.
+- signed-release procedure, privacy documentation, and release checklist. The
+  signed candidate and public-release evidence remain a gate after M7.
 
 Estimated total effort after M0: 7-10 weeks. Store review time is not included.
 
@@ -104,7 +112,7 @@ Estimated total effort after M0: 7-10 weeks. Store review time is not included.
 
 ## 4. Repository Layout
 
-The intended layout after scaffolding is:
+The implemented repository layout is:
 
 ```text
 gnbp-image-generator/
@@ -124,10 +132,10 @@ gnbp-image-generator/
 ```
 
 The two implementations share behavior specifications, not source code. The
-desktop code will not be moved into a `desktop/` directory during the initial
-Android work.
+desktop code remains at the repository root rather than moving into a
+`desktop/` directory.
 
-CI workflows will be path-filtered:
+CI workflows are path-filtered:
 
 - desktop tests run for desktop paths, shared contracts, or desktop workflow
   changes;
@@ -141,7 +149,7 @@ version source. Android uses Gradle `versionName` and monotonic `versionCode`.
 Release tags use platform prefixes such as `desktop-v9.2.0` and
 `android-v0.1.0`.
 
-## 5. Proposed Android Stack
+## 5. Implemented Android Stack
 
 - Kotlin;
 - Jetpack Compose and Material 3;
@@ -155,20 +163,20 @@ Release tags use platform prefixes such as `desktop-v9.2.0` and
 - Coil for previews and thumbnails;
 - Android string resources from the first scaffold; no user-facing text is
   hard-coded in Compose code;
-- WorkManager or a foreground-work implementation only when the reliable
-  release milestone requires it;
+- an application-scoped `GenerationEngine` controlled by a non-exported
+  `dataSync` foreground service for M7 reliable work;
 - JUnit, MockWebServer, Room tests, and Compose UI tests.
 
-Dependency versions, `minSdk`, and `targetSdk` will be fixed during scaffolding
-against the current stable Android toolchain. Dependencies should be held in a
-Gradle version catalog.
+Dependency versions are held in the Gradle version catalog. The implemented app
+uses `minSdk 26`, `compileSdk 37`, and `targetSdk 37`; Android identity and
+version values remain single-sourced in `android/app/build.gradle.kts`.
 
 ## 6. Architecture
 
 ### 6.1 Generation Module
 
-The primary deep module is `GenerationEngine`. Its external interface should be
-small and expose product behavior rather than transport or Android details:
+The primary deep module is `GenerationEngine`. Its external interface is small
+and exposes product behavior rather than transport or Android details:
 
 ```text
 enqueue(BatchRequest) -> List<TaskId>
@@ -242,11 +250,12 @@ Behavior to preserve:
 - reference-image metadata reduced to non-private display names;
 - configuration migrations fill new defaults without replacing user values.
 
-Provider behavior requiring an explicit decision rather than silent parity:
+Provider behavior resolved explicitly rather than copied silently:
 
 - the desktop Gemini adapter sends `BLOCK_NONE` for four safety categories;
-- Android handling must be chosen before M2 and aligned with the distribution
-  channel, provider behavior, and applicable generated-content policies.
+- M0 decision 10 preserved `BLOCK_NONE` for the first side-loaded Android
+  edition, M2 implemented it, and any application-store distribution requires a
+  new content-policy review.
 
 Behavior to change deliberately:
 
@@ -568,7 +577,7 @@ long-term traceability.
     request behavior. Content policy must be reviewed again before distribution
     through Google Play or any domestic application store.
 
-## 15. Immediate Next Gate
+## 15. Implementation And Gate Record
 
 1. M1 scaffold review passed at commit `d32d897` with no blocking findings.
 2. The independent architecture review accepted
@@ -593,8 +602,8 @@ long-term traceability.
    eight packaged `.so` entries pass `zipalign -c -P 16`, and the two arm64-v8a
    libraries have ELF `LOAD` segment `p_align = 0x4000`. CI now treats the APK
    alignment check as blocking. That task verifies APK package alignment only;
-    M7 adds a second blocking guard that parses every packaged arm64 ELF
-    program header and rejects any `LOAD` segment below `p_align = 0x4000`. On API 26-29,
+   M7 adds a second blocking guard that parses every packaged arm64 ELF program
+   header and rejects any `LOAD` segment below `p_align = 0x4000`. On API 26-29,
    Android does not expose a network-specific NAT64 prefix; the classifier can
    recognize the well-known `64:ff9b::/96` prefix but not a provider-specific
    prefix on those OS versions.
@@ -604,7 +613,7 @@ long-term traceability.
    explicitly non-blocking API 37 16 KB compatibility job reproduced the known
    pre-instrumentation boot timeout. Claude Code independently reviewed the
    evidence with no blocking findings, and the user formally released M4 on
-   2026-07-19. M5 is the active milestone.
+   2026-07-19, making M5 the active milestone at that point.
 9. The first M5 generation-workflow slice now provides the `GenerationEngine`,
    Room task persistence/migration `2 -> 3`, immutable reference preparation,
    cancellation/retry/`OutcomeUnknown` transitions, and Generate/Tasks Compose
@@ -619,15 +628,16 @@ long-term traceability.
    invariants, then required reference ownership to move before enqueue and the
    Compose workflow to use the real submit-button click path. Commits `4584136`
    and `0fadfbd` addressed both findings, and the independent re-review closed
-   them. Profile editing remains in M6 and reliable background execution remains
-   in M7.
+   them. At that point, profile editing remained assigned to M6 and reliable
+   background execution remained assigned to M7.
 10. Claude Code independently closed both M5 review findings. A manually
     authorized, single-request OpenAI-compatible HTTPS relay smoke test then
     passed through the Android provider and transport implementation. The
     opt-in Gradle task remains excluded from default tests and CI; its reports
     contained no API key, endpoint, model, prompt, provider message, or image
     bytes. Claude Code independently verified the ignored smoke report and the
-    user formally released M5 on 2026-07-19. M6 is the active milestone.
+    user formally released M5 on 2026-07-19, making M6 the active milestone at
+    that point.
 11. M6 closes the predictable blank-prompt ownership case by disabling Submit
     until the prompt is non-blank while retaining engine-side validation. The
     remaining permission-dialog recreation caveat stays deferred because it

@@ -1,15 +1,17 @@
 # Android Relay Transport Security Specification
 
-Status: Accepted after independent architecture review
+Status: Accepted and implemented through M7 after independent architecture review
 Date: 2026-07-18
 
 ## 1. Scope
 
 This specification defines the network-security behavior used by the Android
-Gemini and OpenAI-compatible provider adapters. It is a prerequisite for M2
-implementation because the application accepts user-configured relay endpoints,
-including private relays that may use a private CA, a self-signed certificate,
-an invalid hostname, or cleartext HTTP.
+Gemini and OpenAI-compatible provider adapters. It was the architecture gate for
+M2 because the application accepts user-configured relay endpoints, including
+private relays that may use a private CA, a self-signed certificate, an invalid
+hostname, or cleartext HTTP. The transport was implemented in M2, persisted in
+M3, exposed through the M6 Settings UI, and retained by the M7
+application-scoped generation runtime.
 
 The specification covers:
 
@@ -21,12 +23,12 @@ The specification covers:
 - logging and test requirements.
 
 It does not define profile persistence UI, API-key encryption, provider JSON
-payloads, or reliable background execution. Those are implemented in later
-milestones against the types and invariants established here.
+payloads, or reliable background execution. Those concerns were subsequently
+implemented in M2-M7 against the types and invariants established here.
 
 The architecture gate passed at commit `1062296`. The accepted review
-refinements are incorporated in this revision and production adapter work may
-proceed against it.
+refinements are incorporated in the production adapters and their regression
+tests.
 
 ## 2. Security Objectives
 
@@ -257,7 +259,7 @@ address before returning it to OkHttp, so a hostname resolving to a LAN address
 cannot bypass the profile choice.
 
 On API 37 and later, `AllowLan` also requires the runtime
-`ACCESS_LOCAL_NETWORK` grant. The app declares the permission in M2, but the UI
+`ACCESS_LOCAL_NETWORK` grant. The app declares the permission, and the UI
 requests it only when a user enables or runs a LAN profile. Denial returns a
 typed `LocalNetworkPermissionRequired` failure and must not be reported as a
 generic timeout. API 26-36 still require the explicit profile choice even though
@@ -295,9 +297,13 @@ fails specifically because of ECH or ECH GREASE, that is a new compatibility
 case requiring evidence and a separate disposition; the adapter must not
 silently downgrade ECH behavior.
 
-API 37 validation before M5 must include at least one strict public TLS endpoint
-and each approved private relay certificate mode. Real endpoint checks are
-manual opt-in tests and must never enter CI, source control, or logs.
+The manually authorized M5 provider smoke validated one strict
+OpenAI-compatible HTTPS relay without exposing its endpoint or credentials.
+Offline tests cover every approved private relay certificate mode. Each mode
+intended for a signed release must also be exercised during side-load acceptance.
+Real endpoint checks are manual opt-in tests and must never enter CI, source
+control, or logs. API 37 16 KB device evidence remains a separate public-release
+gate.
 
 ## 10. Retries, Redirects, Cancellation, And Certainty
 
@@ -310,8 +316,9 @@ followSslRedirects = false
 ```
 
 The application does not retry HTTP 429, HTTP 5xx, timeouts, broken connections,
-or TLS failures automatically. Explicit user retry creates a new task only in a
-later workflow milestone.
+or TLS failures automatically. M5 added explicit user retry as a new persisted
+task, and M7 routes it through the same foreground-runtime ownership rules as a
+new submission.
 
 The transport tracks request progress and attaches `DeliveryCertainty` to every
 failure:
@@ -329,8 +336,8 @@ event remains `NotSent`; response-body completion is not the transition point.
 
 Cancellation before transmission is `Cancelled(NotSent)`. Cancellation,
 timeout, or connection loss after transmission starts is
-`RequestOutcomeUnknown(PossiblySent)`. M5 maps the latter to task state
-`OutcomeUnknown` and never retries it automatically.
+`RequestOutcomeUnknown(PossiblySent)`. The generation engine maps the latter to
+task state `OutcomeUnknown` and never retries it automatically.
 
 ## 11. Typed Failures
 
@@ -367,8 +374,9 @@ preserve `DeliveryCertainty`. Raw exceptions must not cross into UI or logs.
 
 ## 13. Offline Test Matrix
 
-M2 tests use MockWebServer and generated test certificates. They never call a
-real provider.
+The M2-originated transport tests use MockWebServer and generated test
+certificates. They remain part of the offline host suite and never call a real
+provider.
 
 Required cases:
 
@@ -393,11 +401,12 @@ Required cases:
 10. Malformed JSON, oversized responses, HTTP errors, cancellation, and timeout
     remain typed and retain delivery certainty.
 
-API 37 instrumentation/manual checks additionally verify runtime LAN denial,
-grant, and revocation; localhost behavior; strict public TLS; and every approved
-private-certificate mode. These checks remain offline where a local test server
-can represent the case. Any real relay smoke test is manually enabled and
-redacted.
+The API 26/29/33/36 blocking instrumentation matrix exercises the application
+workflow while host tests cover LAN denial/grant logic, localhost behavior, and
+every certificate mode with local test servers. Any real relay smoke test is
+manually enabled and redacted. A successful API 37 16 KB physical-device or
+Firebase Test Lab instrumentation run remains mandatory before a tag or public
+APK because the hosted 16 KB image does not currently boot.
 
 ## 14. Architecture Gate Decisions
 

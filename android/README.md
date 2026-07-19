@@ -1,12 +1,16 @@
 # GNBP Android
 
 This directory contains the native Kotlin and Jetpack Compose edition of GNBP
-Image Generator. The offline-tested provider and transport contract slice and
-secure persistence are implemented. M4 media input/output, M5 end-to-end
-generation, M6 MVP completion, and M7 reliable background execution passed
-their independent reviews and API 26/29/33/36 device gates. No public APK is
-released until the API 37 16 KB device evidence and signed-release acceptance
-gate also pass.
+Image Generator. M1-M7 are implemented and have passed independent review and
+their blocking API 26/29/33/36 device gates. This includes provider transport,
+secure persistence, media input/output, end-to-end generation, the complete MVP
+UI, and reliable background execution. No public APK is released until the API
+37 16 KB device evidence and signed-release acceptance gate also pass.
+
+The Android edition implements the core desktop generation workflow but is not
+a screen-for-screen port. Current platform replacements and remaining parity
+work are recorded in
+[`../contracts/PLATFORM-PARITY.md`](../contracts/PLATFORM-PARITY.md).
 
 ## Toolchain
 
@@ -35,17 +39,19 @@ the AGP compatibility table.
 PowerShell:
 
 ```powershell
-.\gradlew.bat lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest
+.\gradlew.bat check assembleDebugAndroidTest
 ```
 
 Linux/macOS:
 
 ```bash
-./gradlew lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest
+./gradlew check assembleDebugAndroidTest
 ```
 
 The debug APK is generated under `app/build/outputs/apk/debug/`. Build output is
-ignored by Git.
+ignored by Git. `check` includes lint, the offline debug unit suite, the
+network-construction chokepoint, `zipalign -P 16`, and the arm64 ELF
+`LOAD.p_align` guard.
 
 Automated tests must remain offline and must never call a real image provider.
 Do not commit `local.properties`, credentials, private endpoints, signing
@@ -103,8 +109,8 @@ Reference cleanup has an explicit policy: incomplete `.tmp` copies are eligible
 after one hour; unreferenced durable copies are eligible after seven days; IDs
 retained by a draft or task are never removed. The M4 picker draft is owned by a
 ViewModel across activity recreation and deletes unsubmitted copies when the
-owner is cleared. M5 owns startup cleanup after persistent task/draft
-repositories can supply the retained-ID set.
+owner is cleared. Since M5, startup cleanup uses the persistent task/draft
+repositories' retained-ID set.
 
 Generated images use MediaStore. API 29 and newer use `RELATIVE_PATH` plus
 `IS_PENDING`; API 26-28 require `WRITE_EXTERNAL_STORAGE` and use the legacy
@@ -133,7 +139,8 @@ offline fakes, including a Compose instrumentation workflow test.
 The M5 workflow passed independent review, a manually authorized
 OpenAI-compatible provider smoke, and the user gate. Submission remains
 disabled until a profile exists and while the prompt is blank. The reliable
-background execution guarantees remain assigned to M7.
+background execution guarantees originally deferred by M5 were delivered and
+independently reviewed in M7.
 
 ## MVP Completion (M6)
 
@@ -148,8 +155,8 @@ Gallery derives results from persisted successful tasks and provides bounded
 thumbnails, preview, Android sharing, and reuse through the durable reference
 copy path. Task diagnostics map typed failures to localized guidance without
 showing provider text, prompts, endpoints, or secrets. Completion notifications
-are best-effort while the M6 process is alive; they do not replace M7 foreground
-work and process-death reconciliation.
+introduced in M6 are now owned by the M7 foreground runtime, which also supplies
+ongoing work notification and process-death reconciliation.
 
 The signed side-loaded APK procedure and acceptance checklist are documented in
 [`../docs/ANDROID-SIDELOAD-RELEASE.md`](../docs/ANDROID-SIDELOAD-RELEASE.md).
@@ -217,8 +224,9 @@ entries aligned to 16 KB in the APK, and both arm64-v8a libraries use ELF
 `zipalign -c -P 16` so a future dependency cannot silently regress package
 alignment. It now depends on `verifyDebugArm64ElfPageAlignment`, which parses
 every packaged arm64 ELF program header and rejects `LOAD` segments with
-`p_align < 0x4000`. Before any tag
-release or application-store submission, the
+`p_align < 0x4000`. These checks currently exercise two packaged AndroidX arm64
+libraries rather than passing an empty library set. Before any tag release or
+application-store submission, the
 repository maintainer acting as release owner must obtain a successful API 37
 16 KB instrumentation run through Firebase Test Lab or a physical 16 KB device;
 Codex records the evidence and Claude Code independently reviews it.

@@ -37,20 +37,33 @@ The native Kotlin/Compose application is a self-contained Gradle project in
 `ANDROID-DEVELOPMENT-PLAN.md`; the platform decision is recorded in
 `adr/0001-native-android-implementation.md`.
 
-The current scaffold requires JDK 17 and Android SDK Platform 37. From
+M1-M7 have passed their implementation, independent-review, and blocking
+API 26/29/33/36 device gates. The source tree is at the reliable-background
+milestone, but no signed public APK exists yet. Remaining desktop-parity gaps are
+tracked in `../contracts/PLATFORM-PARITY.md`; release-only evidence is tracked in
+`ANDROID-SIDELOAD-RELEASE.md`.
+
+The current Android project requires JDK 17 and Android SDK Platform 37. From
 PowerShell:
 
 ```powershell
 cd android
-.\gradlew.bat lintDebug testDebugUnitTest assembleDebug
+.\gradlew.bat check assembleDebugAndroidTest
 ```
 
 The equivalent command on Linux/macOS and in CI is:
 
 ```bash
 cd android
-./gradlew lintDebug testDebugUnitTest assembleDebug
+./gradlew check assembleDebugAndroidTest
 ```
+
+`check` includes lint, the offline debug unit suite, the network-construction
+chokepoint, APK ZIP alignment, and arm64 ELF `LOAD.p_align` verification. Device
+instrumentation runs through `connectedDebugAndroidTest`; CI treats API 26, 29,
+33, and 36 as blocking and retains API 37 16 KB as a non-blocking hosted-image
+signal. A successful physical-device or Firebase Test Lab API 37 16 KB run is
+still mandatory before a tag or public APK.
 
 Android automated tests must remain offline. `local.properties`, signing
 stores, APK/AAB output, credentials, private endpoints, and generated images
