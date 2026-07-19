@@ -85,6 +85,18 @@ py -3.11 -m PyInstaller build.spec --clean --noconfirm
 构建结果为 `dist/GNBP-Image-Generator_V<版本号>.exe`。打包脚本会清理旧的 `build` 和
 `dist` 目录、重新生成图标，并在缺少 Python 3.11 时给出明确错误。
 
+### Android 开发状态
+
+原生 Kotlin/Compose Android 版本位于 `android/`。M1-M7 实现与独立审查均已
+完成，核心生图、参考图、批量任务、图库、加密凭据以及可靠前台执行已经可用。
+它不是桌面界面的逐项移植；尚未对齐的桌面便利功能记录在
+[`contracts/PLATFORM-PARITY.md`](contracts/PLATFORM-PARITY.md) 中。
+
+Android 版目前仍未公开发布签名 APK。任何 Android tag 或公开 APK 之前，仍须
+完成 API 37 16 KB 真机或 Firebase Test Lab 验证以及签名候选版验收。构建与
+测试说明请参阅 [`android/README.md`](android/README.md)，发布门请参阅
+[`docs/ANDROID-SIDELOAD-RELEASE.md`](docs/ANDROID-SIDELOAD-RELEASE.md)。
+
 ### 分支
 
 - `main`：稳定版本，也是 GitHub 默认分支
@@ -189,6 +201,22 @@ py -3.11 -m PyInstaller build.spec --clean --noconfirm
 The output is `dist/GNBP-Image-Generator_V<version>.exe`. The build script removes stale
 `build` and `dist` directories, regenerates the icon, and reports a clear error
 when Python 3.11 is unavailable.
+
+### Android Development Status
+
+The native Kotlin/Compose Android edition lives in `android/`. Its M1-M7
+implementation and independent reviews are complete, including core generation,
+reference images, batch tasks, Gallery, encrypted credentials, and reliable
+foreground execution. It is not a screen-for-screen desktop port; remaining
+desktop convenience gaps are tracked in
+[`contracts/PLATFORM-PARITY.md`](contracts/PLATFORM-PARITY.md).
+
+No signed Android APK has been published yet. An Android tag or public APK still
+requires API 37 16 KB evidence from a physical device or Firebase Test Lab and
+acceptance of the signed candidate. See [`android/README.md`](android/README.md)
+for build and test requirements and
+[`docs/ANDROID-SIDELOAD-RELEASE.md`](docs/ANDROID-SIDELOAD-RELEASE.md) for the
+release gate.
 
 ### Branches
 

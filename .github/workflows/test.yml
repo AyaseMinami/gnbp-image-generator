@@ -1,10 +1,32 @@
-name: Tests
+name: Desktop Tests
 
 on:
   push:
     branches: [main, dev]
+    paths:
+      - "app_info.py"
+      - "main.py"
+      - "requirements.txt"
+      - "build.spec"
+      - "config/**"
+      - "core/**"
+      - "ui/**"
+      - "tests/**"
+      - "contracts/**"
+      - ".github/workflows/test.yml"
   pull_request:
     branches: [main, dev]
+    paths:
+      - "app_info.py"
+      - "main.py"
+      - "requirements.txt"
+      - "build.spec"
+      - "config/**"
+      - "core/**"
+      - "ui/**"
+      - "tests/**"
+      - "contracts/**"
+      - ".github/workflows/test.yml"
   workflow_dispatch:
 
 jobs:

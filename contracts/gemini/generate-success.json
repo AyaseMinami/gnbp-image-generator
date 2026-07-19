@@ -1,0 +1,16 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "inlineData": {
+              "mimeType": "image/png",
+              "data": "PLACEHOLDER_BASE64_PNG"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

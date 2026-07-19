@@ -1,0 +1,97 @@
+name: Android Tests
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android-test.yml"
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android-test.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+      - name: Test and assemble debug APKs
+        working-directory: android
+        run: bash ./gradlew lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest --stacktrace
+
+  device-test:
+    name: device-test (${{ matrix.label }})
+    needs: test
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.allow_failure }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: API 26
+            api-level: 26
+            target: default
+            allow_failure: false
+            boot_timeout: 1200
+          - label: API 29
+            api-level: 29
+            target: default
+            allow_failure: false
+            boot_timeout: 1200
+          - label: API 33
+            api-level: 33
+            target: default
+            allow_failure: false
+            boot_timeout: 1200
+          - label: API 36
+            api-level: 36
+            target: google_apis
+            allow_failure: false
+            boot_timeout: 1200
+          # Current hosted runners cannot boot this ps16k image. Keep the
+          # compatibility signal non-blocking until the image becomes usable.
+          # Evidence: https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29646096937
+          - label: API 37 16 KB compatibility
+            api-level: "37.0"
+            target: google_apis_ps16k
+            allow_failure: true
+            boot_timeout: 300
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned Android SDK packages
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+      - name: Enable KVM access
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run instrumentation tests on API ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-boot-timeout: ${{ matrix.boot_timeout }}
+          script: cd android && ./gradlew connectedDebugAndroidTest --stacktrace
