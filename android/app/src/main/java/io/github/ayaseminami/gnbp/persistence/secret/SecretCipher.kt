@@ -1,7 +1,6 @@
 package io.github.ayaseminami.gnbp.persistence.secret
 
 import java.security.GeneralSecurityException
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -43,20 +42,14 @@ interface SecretCipher {
 
 class AesGcmSecretCipher(
     private val keyProvider: SecretKeyProvider,
-    private val secureRandom: SecureRandom = SecureRandom(),
 ) : SecretCipher {
     override fun encrypt(plaintext: String): EncryptedSecret {
-        val iv = ByteArray(IV_BYTES).also(secureRandom::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(
-                Cipher.ENCRYPT_MODE,
-                keyProvider.getOrCreate(),
-                GCMParameterSpec(AUTHENTICATION_TAG_BITS, iv),
-            )
+            init(Cipher.ENCRYPT_MODE, keyProvider.getOrCreate())
         }
         return EncryptedSecret(
             version = CURRENT_VERSION,
-            iv = iv,
+            iv = cipher.iv,
             ciphertext = cipher.doFinal(plaintext.encodeToByteArray()),
         )
     }
@@ -81,7 +74,6 @@ class AesGcmSecretCipher(
 
     companion object {
         const val CURRENT_VERSION = 1
-        private const val IV_BYTES = 12
         private const val AUTHENTICATION_TAG_BITS = 128
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
