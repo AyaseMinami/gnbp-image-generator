@@ -7,11 +7,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -156,6 +158,8 @@ class GenerationAppInstrumentationTest {
 
         compose.onNodeWithText(context.getString(R.string.prompt_label)).performTextInput("lighthouse")
         compose.onNodeWithTag(GENERATION_SUBMIT_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()
         compose.waitUntil(timeoutMillis = 5_000) { submitInvoked.get() }
