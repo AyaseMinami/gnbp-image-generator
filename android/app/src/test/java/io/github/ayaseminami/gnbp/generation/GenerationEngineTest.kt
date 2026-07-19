@@ -69,6 +69,7 @@ class GenerationEngineTest {
             profileLoader = { geminiProfile() },
             maxConcurrency = 2,
             externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
             workerDispatcher = UnconfinedTestDispatcher(testScheduler),
             nowEpochMillis = { 1_000L },
             idGenerator = sequenceOf("task-one", "task-two").iterator()::next,
@@ -265,6 +266,95 @@ class GenerationEngineTest {
     }
 
     @Test
+    fun `startup restores a published result receipt without another provider request`() = runTest {
+        val taskId = TaskId("published-before-process-death")
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = taskId,
+                    request = taskRequestSnapshot(),
+                    status = TaskStatus.Running,
+                    createdAtEpochMillis = 100L,
+                    startedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val provider = SequenceProvider(emptyList())
+        val asset = AssetRef(
+            id = MediaAssetId("recovered-asset"),
+            uri = Uri.parse("content://gnbp/recovered-asset"),
+            displayName = "recovered.png",
+            mimeType = "image/png",
+            byteSize = 3,
+        )
+        val journal = RecordingResultJournal(ResultJournalRecovery.Saved(asset))
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = emptyList(),
+            resultJournal = journal,
+        )
+        try {
+            val recovered = engine.observeTasks().first { tasks ->
+                tasks.singleOrNull()?.status is TaskStatus.Succeeded
+            }.single()
+
+            val recoveredAsset = (recovered.status as TaskStatus.Succeeded).asset
+            assertEquals(asset.id.value, recoveredAsset.id)
+            assertEquals(asset.uri.toString(), recoveredAsset.location)
+            assertEquals(0, provider.callCount.get())
+            assertEquals(listOf(taskId), journal.deletedTaskIds)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `startup publishes a staged response without another provider request`() = runTest {
+        val taskId = TaskId("staged-before-process-death")
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = taskId,
+                    request = taskRequestSnapshot(),
+                    status = TaskStatus.Running,
+                    createdAtEpochMillis = 100L,
+                    startedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val provider = SequenceProvider(emptyList())
+        val assetStore = RecordingAssetStore()
+        val metadata = GeneratedAssetMetadata("Gemini", "persisted-model")
+        val journal = RecordingResultJournal(
+            ResultJournalRecovery.Staged(
+                image = GeneratedImage(byteArrayOf(4, 5, 6), "image/png"),
+                metadata = metadata,
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = emptyList(),
+            assetStore = assetStore,
+            resultJournal = journal,
+        )
+        try {
+            engine.observeTasks().first { tasks ->
+                tasks.singleOrNull()?.status is TaskStatus.Succeeded
+            }
+
+            assertEquals(0, provider.callCount.get())
+            assertEquals(listOf(metadata), assetStore.savedMetadata)
+            assertEquals(listOf(taskId), journal.deletedTaskIds)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `foreground interruption cancels active work before marking it unknown`() = runTest {
         val repository = InMemoryTaskRepository()
         val provider = CancellationAwareProvider()
@@ -336,6 +426,7 @@ class GenerationEngineTest {
             profileLoader = { geminiProfile(model = "current-profile-model") },
             maxConcurrency = 1,
             externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
             workerDispatcher = UnconfinedTestDispatcher(testScheduler),
             idGenerator = { "retry-after-restart" },
         )
@@ -424,6 +515,7 @@ class GenerationEngineTest {
         ids: List<String>,
         now: () -> Long = { 1_000L },
         assetStore: GeneratedAssetStore = RecordingAssetStore(),
+        resultJournal: GenerationResultJournal = NoOpGenerationResultJournal,
     ) = DefaultGenerationEngine(
         taskRepository = repository,
         providerFactory = GenerationProviderFactory { provider },
@@ -435,7 +527,35 @@ class GenerationEngineTest {
         workerDispatcher = UnconfinedTestDispatcher(testScheduler),
         nowEpochMillis = now,
         idGenerator = ids.iterator()::next,
+        resultJournal = resultJournal,
     )
+}
+
+private class RecordingResultJournal(
+    private var recovery: ResultJournalRecovery = ResultJournalRecovery.None,
+) : GenerationResultJournal {
+    val deletedTaskIds = mutableListOf<TaskId>()
+
+    override suspend fun stage(
+        taskId: TaskId,
+        image: GeneratedImage,
+        metadata: GeneratedAssetMetadata,
+    ): Boolean {
+        recovery = ResultJournalRecovery.Staged(image, metadata)
+        return true
+    }
+
+    override suspend fun recordSaved(taskId: TaskId, asset: AssetRef): Boolean {
+        recovery = ResultJournalRecovery.Saved(asset)
+        return true
+    }
+
+    override suspend fun load(taskId: TaskId): ResultJournalRecovery = recovery
+
+    override suspend fun delete(taskId: TaskId) {
+        deletedTaskIds += taskId
+        recovery = ResultJournalRecovery.None
+    }
 }
 
 private class ControlledProvider : ImageGenerationProvider {

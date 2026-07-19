@@ -26,6 +26,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationProviderFactory
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
 import io.github.ayaseminami.gnbp.generation.OfflineFakeImageGenerationProvider
+import io.github.ayaseminami.gnbp.generation.NoOpGenerationResultJournal
 import io.github.ayaseminami.gnbp.generation.ReferencePreparer
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
@@ -104,6 +105,7 @@ class GenerationAppInstrumentationTest {
             profileLoader = { profile },
             maxConcurrency = 1,
             externalScope = scope,
+            resultJournal = NoOpGenerationResultJournal,
             idGenerator = { "fake-workflow-task" },
         ).also { engine = it }
         val submitRequest: (String) -> Unit = { prompt ->

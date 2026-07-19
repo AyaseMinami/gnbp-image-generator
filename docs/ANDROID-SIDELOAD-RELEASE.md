@@ -82,6 +82,9 @@ the system locale. In light and dark system themes, exercise:
 - interrupt the process during one running and one queued task, then relaunch:
   the running task must become `OutcomeUnknown`, the queued task may resume, and
   neither request may be retried automatically;
+- interrupt after a fake/offline provider response is staged or after its
+  MediaStore receipt is journaled; relaunch must recover the result association
+  without making another provider request;
 - cancel an active request from Tasks and confirm the transport call stops and
   the foreground service exits after all work becomes terminal;
 - activity rotation while editing and while viewing every main screen;
@@ -90,6 +93,9 @@ the system locale. In light and dark system themes, exercise:
 M7 uses a `dataSync` foreground service with a mandatory ongoing notification.
 This improves survival after the user leaves or locks the device but cannot
 override force-stop, shutdown, platform time limits, or OEM process policy.
+On Android 13 and newer, denied notification permission can hide the drawer
+entry even though the system active-apps surface still exposes the foreground
+service.
 Interrupted paid requests become `OutcomeUnknown` and are never retried
 automatically. State these limits in release notes.
 

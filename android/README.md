@@ -167,16 +167,29 @@ a command lease and start foreground work before accessing that singleton. The
 ongoing notification contains only static status text and queued/running counts;
 it never includes prompts, profile names, endpoints, content URIs, or keys.
 Completion-notification preferences do not disable the mandatory foreground
-service notification.
+service notification. On Android 13 and newer, if the user denies notification
+permission, Android may omit that notification from the drawer while still
+showing the foreground service in the system's active-apps/task-manager surface.
 
 The service requests sticky restart and the Activity also resumes persisted
 active work when the user reopens the app. A recreated engine safely resumes
 `Queued` tasks. Any request that was `Running` when its process or service was
 interrupted becomes `OutcomeUnknown` and is never retried automatically. An
 orderly foreground-service timeout first cancels and joins active transport work
-before writing that terminal state. These mechanisms reduce Android lifecycle
-loss; they do not override force-stop, device shutdown, platform foreground-work
-limits, or OEM process policy.
+before writing that terminal state. If platform shutdown time expires first,
+the service exits while the application-scoped cancellation/join operation keeps
+its single ownership; it never writes a final interruption state ahead of the
+worker. These mechanisms reduce Android lifecycle loss; they do not override
+force-stop, device shutdown, platform foreground-work limits, or OEM process
+policy.
+
+After a provider returns an image, the engine atomically stages the bytes and
+sanitized generation metadata in app-private storage. It then publishes to
+MediaStore, journals the returned content URI, commits the Room success state,
+and removes the private files. On process restart, a complete receipt restores
+the task association; a staged response finishes the local MediaStore save
+without calling the provider again. The journal never contains API keys or
+endpoints and is excluded from Android backup and device transfer.
 
 Host tests cover large images, revoked URI access, save rollback, external
 deletion, scoped/legacy values, and collision-safe names. Blocking CI runs the

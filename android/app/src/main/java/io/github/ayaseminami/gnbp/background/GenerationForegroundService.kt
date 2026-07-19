@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import io.github.ayaseminami.gnbp.GnbpApplication
-import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.ui.notification.AndroidTaskCompletionNotifier
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
@@ -33,6 +32,7 @@ class GenerationForegroundService : Service() {
     private var collectionStarted = false
     private var idleStopRequested = false
     private var runtimeStopped = false
+    private var interrupting = false
     private var stopJob: Job? = null
 
     override fun onCreate() {
@@ -43,6 +43,10 @@ class GenerationForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (interrupting) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         latestStartId = startId
         idleStopRequested = false
         runtimeStopped = false
@@ -59,7 +63,7 @@ class GenerationForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        interruptAndStop(startId)
+        interruptAndStop()
     }
 
     override fun onDestroy() {
@@ -67,15 +71,10 @@ class GenerationForegroundService : Service() {
         serviceScope.cancel()
         if (!runtimeStopped) {
             runBlocking {
-                val stopped = withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
+                val stopResult = withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
                     applicationGraph.generationRuntime.stop(interrupted = !idleStopRequested)
-                    true
-                } == true
-                if (!stopped && !idleStopRequested) {
-                    withTimeoutOrNull(FALLBACK_RECONCILIATION_TIMEOUT_MILLIS) {
-                        reconcileForcedInterruption()
-                    }
                 }
+                runtimeStopped = stopResult != null
             }
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -108,7 +107,7 @@ class GenerationForegroundService : Service() {
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            interruptAndStop(latestStartId)
+            interruptAndStop()
         }
     }
 
@@ -146,22 +145,22 @@ class GenerationForegroundService : Service() {
         }
     }
 
-    private fun interruptAndStop(startId: Int) {
+    private fun interruptAndStop() {
+        interrupting = true
         stopJob?.cancel()
         stopJob = serviceScope.launch {
             try {
-                val stopped = try {
+                val stopResult = try {
                     withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
                         applicationGraph.generationRuntime.stop(interrupted = true)
-                        true
-                    } == true
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
                     false
                 }
-                if (!stopped) runCatching { reconcileForcedInterruption() }
-                runCatching {
+                runtimeStopped = stopResult != null
+                if (stopResult == true) runCatching {
                     val settings = applicationGraph.persistence.settings.observeSettings().first()
                     val tasks = applicationGraph.persistence.tasks.loadTasks()
                     completionTracker.accept(tasks).forEach { event ->
@@ -169,27 +168,11 @@ class GenerationForegroundService : Service() {
                     }
                 }
             } finally {
-                runtimeStopped = true
                 idleStopRequested = true
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelfResult(startId)
+                stopSelf()
             }
         }
-    }
-
-    private suspend fun reconcileForcedInterruption() {
-        applicationGraph.persistence.tasks.loadTasks()
-            .filter { task -> task.status == TaskStatus.Running }
-            .forEach { task ->
-                applicationGraph.persistence.tasks.updateTask(
-                    task.copy(
-                        status = TaskStatus.OutcomeUnknown(
-                            TaskOutcomeUnknownReason.ProcessInterrupted,
-                        ),
-                        finishedAtEpochMillis = System.currentTimeMillis(),
-                    ),
-                )
-            }
     }
 
     companion object {
@@ -205,6 +188,5 @@ class GenerationForegroundService : Service() {
 
         private const val IDLE_SETTLE_MILLIS = 500L
         private const val SHUTDOWN_TIMEOUT_MILLIS = 4_000L
-        private const val FALLBACK_RECONCILIATION_TIMEOUT_MILLIS = 1_000L
     }
 }

@@ -11,6 +11,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.GenerationCancellation
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
+import io.github.ayaseminami.gnbp.provider.GeneratedImage
 import io.github.ayaseminami.gnbp.provider.ImageGenerationRequest
 import io.github.ayaseminami.gnbp.provider.ImageGenerationResult
 import io.github.ayaseminami.gnbp.provider.ProviderError
@@ -45,6 +46,7 @@ internal class DefaultGenerationEngine(
     private val profileLoader: suspend (ProfileId) -> ProviderProfile?,
     private val maxConcurrency: Int,
     externalScope: CoroutineScope,
+    private val resultJournal: GenerationResultJournal,
     workerDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val referenceDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
@@ -195,14 +197,16 @@ internal class DefaultGenerationEngine(
                 ) {
                     return@forEach
                 }
+                val recovered = recoverJournaledResult(taskId)
                 taskRepository.updateTask(
                     task.copy(
-                        status = TaskStatus.OutcomeUnknown(
+                        status = recovered ?: TaskStatus.OutcomeUnknown(
                             TaskOutcomeUnknownReason.ProcessInterrupted,
                         ),
                         finishedAtEpochMillis = nowEpochMillis(),
                     ),
                 )
+                if (recovered is TaskStatus.Succeeded) resultJournal.delete(taskId)
             }
             activeCancellations.clear()
             requestedCancellations.clear()
@@ -217,18 +221,43 @@ internal class DefaultGenerationEngine(
                 taskRepository.loadTasks().forEach { task ->
                     val reconciled = when (task.status) {
                         TaskStatus.Running -> task.copy(
-                            status = TaskStatus.OutcomeUnknown(
-                                TaskOutcomeUnknownReason.ProcessInterrupted,
-                            ),
+                            status = recoverJournaledResult(task.id)
+                                ?: TaskStatus.OutcomeUnknown(
+                                    TaskOutcomeUnknownReason.ProcessInterrupted,
+                                ),
                             finishedAtEpochMillis = nowEpochMillis(),
                         )
                         TaskStatus.Queued -> {
                             queued += task
                             null
                         }
-                        else -> null
+                        is TaskStatus.Failed -> if (
+                            task.status.reason == TaskFailureReason.AssetSaveFailed
+                        ) {
+                            recoverJournaledResult(task.id)?.let { recovered ->
+                                task.copy(
+                                    status = recovered,
+                                    finishedAtEpochMillis = nowEpochMillis(),
+                                )
+                            }
+                        } else {
+                            resultJournal.delete(task.id)
+                            null
+                        }
+                        is TaskStatus.Succeeded,
+                        is TaskStatus.Cancelled,
+                        is TaskStatus.OutcomeUnknown,
+                        -> {
+                            resultJournal.delete(task.id)
+                            null
+                        }
                     }
-                    reconciled?.let { taskRepository.updateTask(it) }
+                    reconciled?.let { updated ->
+                        taskRepository.updateTask(updated)
+                        if (updated.status is TaskStatus.Succeeded) {
+                            resultJournal.delete(updated.id)
+                        }
+                    }
                 }
                 queued
             }
@@ -297,16 +326,11 @@ internal class DefaultGenerationEngine(
             )
         }
         val finalStatus = when (generationResult) {
-            is ImageGenerationResult.Success -> try {
-                when (val saved = generatedAssetStore.save(generationResult.image, snapshot.metadata)) {
-                    is AssetSaveResult.Saved -> TaskStatus.Succeeded(saved.asset.toGenerationReference())
-                    is AssetSaveResult.Failed -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
-            }
+            is ImageGenerationResult.Success -> saveJournaledResult(
+                taskId = taskId,
+                image = generationResult.image,
+                metadata = snapshot.metadata,
+            )
             is ImageGenerationResult.Failure -> generationResult.error.toTaskStatus(
                 cancellationRequested = taskId in requestedCancellations,
             )
@@ -324,11 +348,57 @@ internal class DefaultGenerationEngine(
                         finishedAtEpochMillis = nowEpochMillis(),
                     ),
                 )
+                if (status is TaskStatus.Succeeded) resultJournal.delete(taskId)
             }
             activeCancellations -= taskId
             requestedCancellations -= taskId
             snapshots -= taskId
         }
+    }
+
+    private suspend fun saveJournaledResult(
+        taskId: TaskId,
+        image: GeneratedImage,
+        metadata: GeneratedAssetMetadata,
+    ): TaskStatus = try {
+        if (!resultJournal.stage(taskId, image, metadata)) {
+            TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+        } else {
+            when (val saved = generatedAssetStore.save(image, metadata)) {
+                is AssetSaveResult.Saved -> if (resultJournal.recordSaved(taskId, saved.asset)) {
+                    TaskStatus.Succeeded(saved.asset.toGenerationReference())
+                } else {
+                    TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+                }
+                is AssetSaveResult.Failed -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+            }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+    }
+
+    private suspend fun recoverJournaledResult(taskId: TaskId): TaskStatus? = try {
+        when (val recovery = resultJournal.load(taskId)) {
+            ResultJournalRecovery.None -> null
+            is ResultJournalRecovery.Saved ->
+                TaskStatus.Succeeded(recovery.asset.toGenerationReference())
+            is ResultJournalRecovery.Staged -> when (
+                val saved = generatedAssetStore.save(recovery.image, recovery.metadata)
+            ) {
+                is AssetSaveResult.Saved -> if (resultJournal.recordSaved(taskId, saved.asset)) {
+                    TaskStatus.Succeeded(saved.asset.toGenerationReference())
+                } else {
+                    TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+                }
+                is AssetSaveResult.Failed -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+            }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
     }
 
     private suspend fun failBeforeStart(taskId: TaskId, status: TaskStatus) {

@@ -4,6 +4,7 @@ import android.app.Application
 import io.github.ayaseminami.gnbp.background.GenerationRuntime
 import io.github.ayaseminami.gnbp.generation.AndroidGenerationProviderFactory
 import io.github.ayaseminami.gnbp.generation.DefaultGenerationEngine
+import io.github.ayaseminami.gnbp.generation.FileGenerationResultJournal
 import io.github.ayaseminami.gnbp.generation.ReferencePreparer
 import io.github.ayaseminami.gnbp.media.BoundedImagePreparer
 import io.github.ayaseminami.gnbp.media.ContentUriReferenceStore
@@ -32,7 +33,8 @@ internal class GnbpAppGraph(
 
     val persistence: GnbpPersistence = GnbpPersistence.create(application)
     val referenceStore: ContentUriReferenceStore = ContentUriReferenceStore.create(application)
-    val generationRuntime = GenerationRuntime(::createEngine)
+    private val resultJournal = FileGenerationResultJournal.create(application)
+    val generationRuntime = GenerationRuntime(engineFactory = ::createEngine)
 
     private suspend fun createEngine(): DefaultGenerationEngine {
         val settings = persistence.settings.observeSettings().first()
@@ -56,6 +58,7 @@ internal class GnbpAppGraph(
             },
             maxConcurrency = settings.maxConcurrency,
             externalScope = applicationScope,
+            resultJournal = resultJournal,
         )
     }
 

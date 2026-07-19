@@ -399,6 +399,9 @@ automated tests remain offline.
   `OutcomeUnknown` without automatic retry;
 - cancel and join active provider work before an orderly service timeout or
   shutdown writes its final interruption state;
+- atomically stage each successful provider response in app-private storage and
+  journal the published MediaStore receipt before marking the Room task
+  successful, so restart can finish local saving without another provider call;
 - validate that task-owned reference copies and generated MediaStore results
   remain addressable across Activity and process recreation;
 - add a blocking ELF program-header check that rejects arm64 native libraries
@@ -656,12 +659,19 @@ long-term traceability.
     posts only static progress counts, owns completion notifications, resumes
     durable queued work, and uses an interruption shutdown path that cancels
     and joins provider work before conservatively writing `OutcomeUnknown`.
+    Follow-up hardening makes shutdown an application-scoped shared operation,
+    preventing cancellation between engine creation and singleton publication
+    from leaking a second engine. Successful provider responses are atomically
+    staged in a private result journal; a saved MediaStore receipt or staged
+    response is recovered after restart without issuing another paid request.
     Host tests cover singleton startup, restart after initialization failure,
     idle versus interrupted shutdown, and active-work accounting. A device test
     starts the real service and verifies its ongoing notification channel. The
     existing APK alignment gate now also blocks arm64 ELF `LOAD` alignment below
-    16 KB. Full local, device-matrix, and independent review gates remain
-    pending.
+    16 KB. The final local gate passes 112 offline Android tests, lint with zero
+    errors, instrumentation APK compilation, both 16 KB checks, the network
+    chokepoint, and all 8 desktop tests. Device-matrix CI and independent
+    re-review remain pending.
 
 ## 16. Deferred Backlog
 
@@ -672,7 +682,10 @@ long-term traceability.
   reference copies, then add repository deletion and coordinated asset cleanup.
 - Reassess at-rest privacy before release. The MVP intentionally keeps prompts
   and sanitized reference display names as plaintext in the app-private Room
-  database; API keys remain encrypted and never enter task persistence.
+  database. M7 also temporarily stages returned image bytes and sanitized
+  generation metadata in app-private files until Room records the public result;
+  these files are excluded from backup and transfer. API keys remain encrypted
+  and never enter task or result-journal persistence.
 - Preserve or clearly recover a pending permission-grant submission across
   Activity recreation. The current draft assets remain available, but automatic
   resubmission may require the user to press Generate again.

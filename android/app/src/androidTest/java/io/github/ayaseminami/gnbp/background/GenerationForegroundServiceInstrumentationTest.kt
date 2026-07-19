@@ -1,5 +1,6 @@
 package io.github.ayaseminami.gnbp.background
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -27,5 +28,11 @@ class GenerationForegroundServiceInstrumentationTest {
         val manager = context.getSystemService(NotificationManager::class.java)
         val expectedName = context.getString(R.string.foreground_notification_channel_name)
         assertTrue(manager.notificationChannels.any { channel -> channel.name == expectedName })
+        assertTrue(
+            manager.activeNotifications.any { status ->
+                status.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0 &&
+                    status.notification.flags and Notification.FLAG_ONGOING_EVENT != 0
+            },
+        )
     }
 }

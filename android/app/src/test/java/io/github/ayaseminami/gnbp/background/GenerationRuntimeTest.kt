@@ -12,7 +12,10 @@ import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -24,8 +27,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class GenerationRuntimeTest {
-    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `command lease starts foreground work before awaiting the singleton engine`() = runTest {
         val engine = RecordingManagedEngine()
@@ -104,6 +107,50 @@ class GenerationRuntimeTest {
     }
 
     @Test
+    fun `all stop callers await the same interruption shutdown`() = runTest {
+        val shutdownStarted = CompletableDeferred<Unit>()
+        val allowShutdown = CompletableDeferred<Unit>()
+        val engine = RecordingManagedEngine(shutdownStarted, allowShutdown)
+        val runtime = GenerationRuntime(
+            engineFactory = { engine },
+            shutdownScope = backgroundScope,
+        )
+        runtime.start()
+
+        val firstStop = async { runtime.stop(interrupted = true) }
+        shutdownStarted.await()
+        val secondStop = async { runtime.stop(interrupted = true) }
+        runCurrent()
+
+        assertFalse(firstStop.isCompleted)
+        assertFalse(secondStop.isCompleted)
+        allowShutdown.complete(Unit)
+        assertTrue(firstStop.await())
+        assertTrue(secondStop.await())
+    }
+
+    @Test
+    fun `cancellation before publication shuts down the unpublished engine`() = runTest {
+        val beforePublication = CompletableDeferred<Unit>()
+        val engine = RecordingManagedEngine()
+        val runtime = GenerationRuntime(
+            engineFactory = { engine },
+            shutdownScope = backgroundScope,
+            beforeEnginePublished = {
+                beforePublication.complete(Unit)
+                awaitCancellation()
+            },
+        )
+        val start = backgroundScope.launch { runtime.start() }
+        beforePublication.await()
+
+        start.cancelAndJoin()
+        runCurrent()
+
+        assertTrue(engine.interrupted)
+    }
+
+    @Test
     fun `foreground snapshot treats command preparation queued and running as active`() {
         assertFalse(ForegroundWorkSnapshot.from(emptyList(), pendingCommands = 0).isActive)
         assertTrue(ForegroundWorkSnapshot.from(emptyList(), pendingCommands = 1).isActive)
@@ -140,7 +187,10 @@ class GenerationRuntimeTest {
     )
 }
 
-private class RecordingManagedEngine : ManagedGenerationEngine {
+private class RecordingManagedEngine(
+    private val shutdownStarted: CompletableDeferred<Unit>? = null,
+    private val allowShutdown: CompletableDeferred<Unit>? = null,
+) : ManagedGenerationEngine {
     var closed = false
     var interrupted = false
 
@@ -154,6 +204,8 @@ private class RecordingManagedEngine : ManagedGenerationEngine {
     override suspend fun retry(id: TaskId): RetryResult = error("Not used")
 
     override suspend fun shutdownForInterruption() {
+        shutdownStarted?.complete(Unit)
+        allowShutdown?.await()
         interrupted = true
     }
 
