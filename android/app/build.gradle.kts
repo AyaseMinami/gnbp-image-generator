@@ -9,6 +9,9 @@ plugins {
 }
 
 val pinnedBuildToolsVersion = "36.0.0"
+val applicationIdValue = "io.github.ayaseminami.gnbp"
+val releaseVersionCodeValue = 1
+val releaseVersionNameValue = "0.1.0"
 
 android {
     namespace = "io.github.ayaseminami.gnbp"
@@ -16,11 +19,11 @@ android {
     buildToolsVersion = pinnedBuildToolsVersion
 
     defaultConfig {
-        applicationId = "io.github.ayaseminami.gnbp"
+        applicationId = applicationIdValue
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseVersionCodeValue
+        versionName = releaseVersionNameValue
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -158,6 +161,14 @@ val apksignerExecutable = sdkDirectory.map { directory ->
         "apksigner.bat"
     } else {
         "apksigner"
+    }
+    directory.file("build-tools/$pinnedBuildToolsVersion/$executable").asFile
+}
+val aapt2Executable = sdkDirectory.map { directory ->
+    val executable = if (System.getProperty("os.name").startsWith("Windows")) {
+        "aapt2.exe"
+    } else {
+        "aapt2"
     }
     directory.file("build-tools/$pinnedBuildToolsVersion/$executable").asFile
 }
@@ -330,6 +341,46 @@ val verifyReleaseCandidateSignature by tasks.registering {
     }
 }
 
+val verifyReleaseCandidateManifest by tasks.registering {
+    group = "verification"
+    description = "Verifies the signed APK package, version, and non-debuggable release manifest."
+    inputs.property("releaseCandidateApk", releaseCandidateApkPath.orElse(""))
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val apkFile = releaseCandidateApk.orNull
+            ?: error("Set -Pgnbp.releaseCandidateApk to the exact signed APK")
+        val aapt2File = aapt2Executable.get()
+        check(aapt2File.isFile) { "aapt2 not found at ${aapt2File.absolutePath}" }
+        check(apkFile.isFile) { "Signed APK not found at ${apkFile.absolutePath}" }
+
+        val process = ProcessBuilder(
+            aapt2File.absolutePath,
+            "dump",
+            "badging",
+            apkFile.absolutePath,
+        ).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().use { reader -> reader.readText() }
+        val exitCode = process.waitFor()
+        check(exitCode == 0) { "aapt2 rejected the supplied APK (exit $exitCode)" }
+        val packageMatch = Regex(
+            "package: name='([^']+)' versionCode='([^']+)' versionName='([^']*)'",
+        ).find(output) ?: error("aapt2 output did not contain a package declaration")
+        check(packageMatch.groupValues[1] == applicationIdValue) {
+            "The candidate package does not match $applicationIdValue"
+        }
+        check(packageMatch.groupValues[2] == releaseVersionCodeValue.toString()) {
+            "The candidate versionCode is not $releaseVersionCodeValue"
+        }
+        check(packageMatch.groupValues[3] == releaseVersionNameValue) {
+            "The candidate versionName is not $releaseVersionNameValue"
+        }
+        check(output.lineSequence().none { line -> line.trim() == "application-debuggable" }) {
+            "The release candidate must not be debuggable"
+        }
+    }
+}
+
 val verifyReleaseBuild by tasks.registering {
     group = "verification"
     description = "Runs CI-safe offline checks and validates the unsigned release APK."
@@ -349,6 +400,7 @@ val verifyReleaseCandidate by tasks.registering {
         verifyReleaseCandidateZipAlignment,
         verifyReleaseCandidateElfAlignment,
         verifyReleaseCandidateSignature,
+        verifyReleaseCandidateManifest,
     )
 }
 

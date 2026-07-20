@@ -34,25 +34,31 @@ import io.github.ayaseminami.gnbp.ui.settings.CertificateDocumentPicker
 import io.github.ayaseminami.gnbp.ui.settings.SettingsActions
 import kotlinx.coroutines.launch
 
+internal const val GENERATION_PERMISSION_REQUEST_KEY = "gnbp.generation.permission"
+
 class MainActivity : ComponentActivity() {
     private val referenceDraft by viewModels<ReferenceDraftViewModel>()
     private val generation by viewModels<GenerationViewModel>()
     private lateinit var permissionLauncher: ActivityResultLauncher<String>
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
+    private val permissionSubmissionCoordinator by lazy {
+        PermissionSubmissionCoordinator(
+            consumePendingSubmission = referenceDraft::consumePendingPermissionSubmission,
+            discardPendingSubmission = referenceDraft::discardPendingPermissionSubmission,
+            submit = ::submit,
+            permissionDenied = generation::permissionDenied,
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        permissionLauncher = registerForActivityResult(
+        permissionLauncher = activityResultRegistry.register(
+            GENERATION_PERMISSION_REQUEST_KEY,
+            this,
             ActivityResultContracts.RequestPermission(),
-        ) { granted ->
-            if (granted) {
-                referenceDraft.consumePendingPermissionSubmission()?.let(::submit)
-            } else {
-                referenceDraft.discardPendingPermissionSubmission()
-                generation.permissionDenied()
-            }
-        }
+            ::onGenerationPermissionResult,
+        )
         notificationPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { granted ->
@@ -150,6 +156,10 @@ class MainActivity : ComponentActivity() {
         permissionLauncher.launch(permission.manifestPermission)
     }
 
+    internal fun onGenerationPermissionResult(granted: Boolean) {
+        permissionSubmissionCoordinator.onResult(granted)
+    }
+
     private fun openResult(asset: GeneratedAssetReference) {
         runCatching { startActivity(asset.toAssetRef().previewIntent()) }
             .onFailure { generation.resultUnavailable() }
@@ -181,6 +191,22 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+}
+
+internal class PermissionSubmissionCoordinator(
+    private val consumePendingSubmission: () -> List<DurableReferenceAsset>?,
+    private val discardPendingSubmission: () -> Unit,
+    private val submit: (List<DurableReferenceAsset>) -> Unit,
+    private val permissionDenied: () -> Unit,
+) {
+    fun onResult(granted: Boolean) {
+        if (granted) {
+            consumePendingSubmission()?.let(submit)
+        } else {
+            discardPendingSubmission()
+            permissionDenied()
         }
     }
 }

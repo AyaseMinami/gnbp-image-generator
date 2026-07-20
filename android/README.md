@@ -65,7 +65,8 @@ Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 ```
 
 The candidate task accepts only the APK path and public certificate digest. It
-does not accept or read a keystore path, alias, password, or signing config.
+does not accept or read a keystore path, alias, password, or signing config. It
+also rejects Debug APKs and candidates with a different package or version.
 
 Automated tests must remain offline and must never call a real image provider.
 Do not commit `local.properties`, credentials, private endpoints, signing

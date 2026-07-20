@@ -78,7 +78,10 @@ ELF program header, rejecting any `LOAD.p_align < 0x4000`. The APK path may be
 absolute or relative to `android/`; the certificate digest must contain exactly
 64 hexadecimal digits, with optional colons or spaces. These Gradle properties
 accept only the APK path and public digest. No keystore path, alias, password,
-or signing configuration is accepted by the task.
+or signing configuration is accepted by the task. The validator also uses
+`aapt2 dump badging` to require the application ID
+`io.github.ayaseminami.gnbp`, `versionCode = 1`, `versionName = 0.1.0`, and a
+non-debuggable manifest, so a Debug APK cannot pass as the release candidate.
 
 Record only the public certificate digest, APK SHA-256, and redacted task
 results in release evidence. Do not record keystore locations or credentials.
