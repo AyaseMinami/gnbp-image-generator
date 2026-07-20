@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ProfileEntity::class, PromptEntity::class, GenerationTaskEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class GnbpDatabase : RoomDatabase() {
@@ -70,5 +70,30 @@ abstract class GnbpDatabase : RoomDatabase() {
                 )
             }
         }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE generation_tasks SET source_task_id = NULL " +
+                        "WHERE source_task_id IS NOT NULL AND EXISTS (" +
+                        "SELECT 1 FROM generation_tasks AS keeper " +
+                        "WHERE keeper.source_task_id = generation_tasks.source_task_id AND (" +
+                        "keeper.created_at < generation_tasks.created_at OR (" +
+                        "keeper.created_at = generation_tasks.created_at AND " +
+                        "keeper.id < generation_tasks.id)))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_generation_tasks_source_task_id` ON " +
+                        "`generation_tasks` (`source_task_id`)",
+                )
+            }
+        }
+
+        internal val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+        )
     }
 }

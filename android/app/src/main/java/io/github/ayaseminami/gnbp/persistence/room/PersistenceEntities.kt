@@ -2,6 +2,7 @@ package io.github.ayaseminami.gnbp.persistence.room
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "profiles")
@@ -53,7 +54,10 @@ internal data class PromptEntity(
         "PromptEntity(id=[REDACTED], name=[REDACTED], content=[REDACTED], sortOrder=$sortOrder)"
 }
 
-@Entity(tableName = "generation_tasks")
+@Entity(
+    tableName = "generation_tasks",
+    indices = [Index(value = ["source_task_id"], unique = true)],
+)
 internal data class GenerationTaskEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "request_json") val requestJson: String,

@@ -36,7 +36,7 @@ class GnbpDatabaseMigrationTest {
         createVersionOneDatabase(context, databaseName, encrypted.version, encrypted.iv, encrypted.ciphertext)
 
         val database = Room.databaseBuilder(context, GnbpDatabase::class.java, databaseName)
-            .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
+            .addMigrations(*GnbpDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
         val profile = RoomProfileRepository(database.profileDao(), cipher)
@@ -58,6 +58,82 @@ class GnbpDatabaseMigrationTest {
 
         database.close()
         context.deleteDatabase(databaseName)
+    }
+
+    @Test
+    fun `migration keeps one direct replacement without deleting duplicate history`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "gnbp-retry-migration-${System.nanoTime()}.db"
+        val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(databaseName)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(3) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE generation_tasks (" +
+                                "id TEXT NOT NULL PRIMARY KEY, " +
+                                "request_json TEXT NOT NULL, " +
+                                "status TEXT NOT NULL, " +
+                                "created_at INTEGER NOT NULL, " +
+                                "started_at INTEGER, " +
+                                "finished_at INTEGER, " +
+                                "source_task_id TEXT, " +
+                                "terminal_reason TEXT, " +
+                                "result_asset_id TEXT, " +
+                                "result_uri TEXT, " +
+                                "result_display_name TEXT, " +
+                                "result_mime_type TEXT, " +
+                                "result_byte_size INTEGER)",
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int,
+                    ) = Unit
+                },
+            )
+            .build()
+        FrameworkSQLiteOpenHelperFactory().create(configuration).use { helper ->
+            val database = helper.writableDatabase
+            fun insertReplacement(id: String, createdAt: Long) {
+                database.execSQL(
+                    "INSERT INTO generation_tasks (" +
+                        "id, request_json, status, created_at, source_task_id" +
+                        ") VALUES (?, ?, ?, ?, ?)",
+                    arrayOf<Any?>(id, "{}", "FAILED", createdAt, "failed-source"),
+                )
+            }
+            insertReplacement("later-replacement", 300L)
+            insertReplacement("earlier-replacement", 200L)
+
+            GnbpDatabase.MIGRATION_3_4.migrate(database)
+
+            val lineageById = buildMap<String, String?> {
+                database.query(
+                    "SELECT id, source_task_id FROM generation_tasks ORDER BY id",
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        put(
+                            cursor.getString(0),
+                            if (cursor.isNull(1)) null else cursor.getString(1),
+                        )
+                    }
+                }
+            }
+            assertEquals(
+                mapOf(
+                    "earlier-replacement" to "failed-source",
+                    "later-replacement" to null,
+                ),
+                lineageById,
+            )
+            assertTrue(
+                runCatching { insertReplacement("new-duplicate", 400L) }.isFailure,
+            )
+        }
+        assertTrue(context.deleteDatabase(databaseName))
     }
 
     private fun createVersionOneDatabase(

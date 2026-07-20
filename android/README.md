@@ -97,6 +97,11 @@ DataStore Core in-memory storage seam because Windows JVM file replacement does
 not provide Android's atomic rename semantics; the production container uses
 the normal Android preference file storage.
 
+Room migration `3 -> 4` preserves task history while normalizing any legacy
+duplicate retry lineage, then adds a unique `source_task_id` index. Explicit
+retry uses an atomic insert-or-return operation so concurrent commands converge
+on one persisted direct replacement and one provider request.
+
 ## Media Input And Output
 
 M4 adds the Android Photo Picker contract, durable app-private copies of picked

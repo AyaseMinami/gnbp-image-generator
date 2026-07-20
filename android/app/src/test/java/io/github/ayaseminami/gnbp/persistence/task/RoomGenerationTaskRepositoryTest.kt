@@ -3,6 +3,7 @@ package io.github.ayaseminami.gnbp.persistence.task
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
@@ -15,6 +16,10 @@ import io.github.ayaseminami.gnbp.persistence.room.GnbpDatabase
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -101,9 +106,122 @@ class RoomGenerationTaskRepositoryTest {
         }
     }
 
+    @Test
+    fun `direct replacement lookup survives a database restart`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "gnbp-retry-restart-${System.nanoTime()}.db"
+        val source = generationTask(
+            id = "failed-source",
+            status = TaskStatus.Failed(TaskFailureReason.Transport),
+        )
+        val replacement = generationTask("replacement", TaskStatus.Queued).copy(
+            createdAtEpochMillis = 2_000L,
+            sourceTaskId = source.id,
+        )
+
+        openDatabase(context, databaseName).let { database ->
+            try {
+                RoomGenerationTaskRepository(database.taskDao())
+                    .insertTasks(listOf(source, replacement))
+            } finally {
+                database.close()
+            }
+        }
+
+        openDatabase(context, databaseName).let { database ->
+            try {
+                val repository = RoomGenerationTaskRepository(database.taskDao())
+                assertEquals(replacement, repository.findDirectReplacement(source.id))
+            } finally {
+                database.close()
+            }
+        }
+        assertTrue(context.deleteDatabase(databaseName))
+    }
+
+    @Test
+    fun `database rejects a second direct replacement for one source task`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            val source = generationTask(
+                id = "failed-source",
+                status = TaskStatus.Failed(TaskFailureReason.Transport),
+            )
+            val firstReplacement = generationTask("replacement-one", TaskStatus.Queued).copy(
+                sourceTaskId = source.id,
+            )
+            val secondReplacement = generationTask("replacement-two", TaskStatus.Queued).copy(
+                sourceTaskId = source.id,
+            )
+            repository.insertTasks(listOf(source, firstReplacement))
+
+            repository.insertTasks(listOf(secondReplacement))
+
+            assertEquals(
+                1,
+                repository.loadTasks().count { task -> task.sourceTaskId == source.id },
+            )
+            assertEquals(
+                firstReplacement,
+                repository.findDirectReplacement(source.id),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `concurrent direct replacement commits return one persisted task`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            val source = generationTask(
+                id = "failed-source",
+                status = TaskStatus.Failed(TaskFailureReason.Transport),
+            )
+            repository.insertTasks(listOf(source))
+            val candidates = listOf("replacement-one", "replacement-two").map { id ->
+                generationTask(id, TaskStatus.Queued).copy(sourceTaskId = source.id)
+            }
+
+            val commits = coroutineScope {
+                candidates.map { candidate ->
+                    async(Dispatchers.IO) {
+                        repository.commitDirectReplacement(candidate)
+                    }
+                }.awaitAll()
+            }
+
+            assertEquals(1, commits.count { it is DirectReplacementCommit.Inserted })
+            assertEquals(1, commits.count { it is DirectReplacementCommit.Existing })
+            assertEquals(
+                1,
+                commits.map { commit ->
+                    when (commit) {
+                        is DirectReplacementCommit.Inserted -> commit.taskId
+                        is DirectReplacementCommit.Existing -> commit.taskId
+                    }
+                }.distinct().size,
+            )
+            assertEquals(
+                1,
+                repository.loadTasks().count { task -> task.sourceTaskId == source.id },
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openDatabase(context: Context, name: String): GnbpDatabase =
         Room.databaseBuilder(context, GnbpDatabase::class.java, name)
-            .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
+            .addMigrations(*GnbpDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 }

@@ -20,6 +20,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.generation.DefaultGenerationEngine
+import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.EnqueueResult
 import io.github.ayaseminami.gnbp.generation.GenerationBatchRequest
 import io.github.ayaseminami.gnbp.generation.GenerationProviderFactory
@@ -56,6 +57,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -311,6 +314,7 @@ private fun noOpSettingsActions(
 
 private class InstrumentedTaskRepository : GenerationTaskRepository {
     private val tasks = MutableStateFlow<List<GenerationTask>>(emptyList())
+    private val replacementMutex = Mutex()
 
     override fun observeTasks(): Flow<List<GenerationTask>> = tasks
 
@@ -318,6 +322,16 @@ private class InstrumentedTaskRepository : GenerationTaskRepository {
 
     override suspend fun findTask(id: TaskId): GenerationTask? =
         tasks.value.firstOrNull { it.id == id }
+
+    override suspend fun commitDirectReplacement(task: GenerationTask): DirectReplacementCommit =
+        replacementMutex.withLock {
+            val sourceTaskId = requireNotNull(task.sourceTaskId)
+            findDirectReplacement(sourceTaskId)?.let { existing ->
+                return@withLock DirectReplacementCommit.Existing(existing.id)
+            }
+            insertTasks(listOf(task))
+            DirectReplacementCommit.Inserted(task.id)
+        }
 
     override suspend fun insertTasks(newTasks: List<GenerationTask>) {
         tasks.value = newTasks + tasks.value
