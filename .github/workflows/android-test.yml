@@ -28,9 +28,9 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install pinned Android SDK packages
         run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
-      - name: Test and assemble debug APKs
+      - name: Verify host tests and unsigned release APK
         working-directory: android
-        run: bash ./gradlew lintDebug testDebugUnitTest :app:verifyDebugApkPageAlignment assembleDebugAndroidTest --stacktrace
+        run: bash ./gradlew :app:verifyReleaseBuild assembleDebugAndroidTest --stacktrace
 
   device-test:
     name: device-test (${{ matrix.label }})

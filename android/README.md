@@ -39,19 +39,33 @@ the AGP compatibility table.
 PowerShell:
 
 ```powershell
-.\gradlew.bat check assembleDebugAndroidTest
+.\gradlew.bat verifyReleaseBuild assembleDebugAndroidTest
 ```
 
 Linux/macOS:
 
 ```bash
-./gradlew check assembleDebugAndroidTest
+./gradlew verifyReleaseBuild assembleDebugAndroidTest
 ```
 
-The debug APK is generated under `app/build/outputs/apk/debug/`. Build output is
-ignored by Git. `check` includes lint, the offline debug unit suite, the
-network-construction chokepoint, `zipalign -P 16`, and the arm64 ELF
-`LOAD.p_align` guard.
+The debug APK is generated under `app/build/outputs/apk/debug/`, and the
+unsigned Release APK is generated under `app/build/outputs/apk/release/`.
+Build output is ignored by Git. `verifyReleaseBuild` includes `check`, release
+lint, offline unit tests, the network-construction chokepoint, and ZIP/arm64 ELF
+16 KB guards for both debug and unsigned Release APKs.
+
+After signing the Release APK outside Gradle, validate the exact candidate
+without exposing signing material:
+
+```powershell
+.\gradlew.bat verifyReleaseCandidate `
+  --project-prop gnbp.releaseCandidateApk="C:\path\to\app-release.apk" `
+  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>"
+Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
+```
+
+The candidate task accepts only the APK path and public certificate digest. It
+does not accept or read a keystore path, alias, password, or signing config.
 
 Automated tests must remain offline and must never call a real image provider.
 Do not commit `local.properties`, credentials, private endpoints, signing
