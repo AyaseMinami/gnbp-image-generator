@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
     private val generation by viewModels<GenerationViewModel>()
     private lateinit var permissionLauncher: ActivityResultLauncher<String>
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
-    private var pendingPermissionReferences: List<DurableReferenceAsset>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,11 +46,10 @@ class MainActivity : ComponentActivity() {
         permissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { granted ->
-            val references = pendingPermissionReferences
-            pendingPermissionReferences = null
-            if (granted && references != null) {
-                submit(references)
-            } else if (!granted) {
+            if (granted) {
+                referenceDraft.consumePendingPermissionSubmission()?.let(::submit)
+            } else {
+                referenceDraft.discardPendingPermissionSubmission()
                 generation.permissionDenied()
             }
         }
@@ -148,7 +146,7 @@ class MainActivity : ComponentActivity() {
         permission: GenerationPermission,
         references: List<DurableReferenceAsset>,
     ) {
-        pendingPermissionReferences = references
+        referenceDraft.retainPendingPermissionSubmission(references)
         permissionLauncher.launch(permission.manifestPermission)
     }
 

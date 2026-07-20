@@ -41,6 +41,17 @@ class ReferenceDraftViewModel(
     fun claimForTask(assets: List<DurableReferenceAsset>): List<DurableReferenceAsset> =
         owner.claimForTask(assets)
 
+    fun retainPendingPermissionSubmission(assets: List<DurableReferenceAsset>) {
+        owner.retainPendingPermissionSubmission(assets)
+    }
+
+    fun consumePendingPermissionSubmission(): List<DurableReferenceAsset>? =
+        owner.consumePendingPermissionSubmission()
+
+    fun discardPendingPermissionSubmission() {
+        owner.discardPendingPermissionSubmission()
+    }
+
     override fun onCleared() {
         val abandonedAssets = owner.transferAssets()
         cleanupScope.launch {
@@ -54,6 +65,7 @@ internal class ReferenceDraftOwner(
     private val deleteAsset: (DurableReferenceAsset) -> Boolean,
 ) {
     private val mutableState = MutableStateFlow(ReferenceDraftState())
+    private var pendingPermissionAssetIds: Set<MediaAssetId>? = null
     val state: StateFlow<ReferenceDraftState> = mutableState.asStateFlow()
 
     fun accept(results: List<ReferenceImportResult>) {
@@ -96,5 +108,19 @@ internal class ReferenceDraftOwner(
     fun claimForTask(assets: List<DurableReferenceAsset>): List<DurableReferenceAsset> {
         val assetIds = assets.mapTo(mutableSetOf()) { it.id }
         return transferAssets(assetIds)
+    }
+
+    fun retainPendingPermissionSubmission(assets: List<DurableReferenceAsset>) {
+        pendingPermissionAssetIds = assets.mapTo(linkedSetOf()) { asset -> asset.id }
+    }
+
+    fun consumePendingPermissionSubmission(): List<DurableReferenceAsset>? {
+        val assetIds = pendingPermissionAssetIds ?: return null
+        pendingPermissionAssetIds = null
+        return mutableState.value.assets.filter { asset -> asset.id in assetIds }
+    }
+
+    fun discardPendingPermissionSubmission() {
+        pendingPermissionAssetIds = null
     }
 }
