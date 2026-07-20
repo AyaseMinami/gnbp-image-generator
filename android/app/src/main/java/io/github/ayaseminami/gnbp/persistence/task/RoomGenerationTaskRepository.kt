@@ -1,5 +1,6 @@
 package io.github.ayaseminami.gnbp.persistence.task
 
+import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
 import io.github.ayaseminami.gnbp.generation.GenerationTask
@@ -11,6 +12,7 @@ import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
+import io.github.ayaseminami.gnbp.persistence.room.DirectReplacementEntityCommit
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskDao
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskEntity
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
@@ -37,6 +39,21 @@ class RoomGenerationTaskRepository internal constructor(
 
     override suspend fun findTask(id: TaskId): GenerationTask? =
         taskDao.findById(id.value)?.let(::decodeOrNull)
+
+    override suspend fun findDirectReplacement(sourceTaskId: TaskId): GenerationTask? =
+        taskDao.findDirectReplacement(sourceTaskId.value)?.let(::decodeOrNull)
+
+    override suspend fun commitDirectReplacement(task: GenerationTask): DirectReplacementCommit {
+        requireNotNull(task.sourceTaskId) { "A direct replacement must identify its source task" }
+        return when (val committed = taskDao.commitDirectReplacement(task.toEntity())) {
+            is DirectReplacementEntityCommit.Inserted -> DirectReplacementCommit.Inserted(
+                TaskId(committed.task.id),
+            )
+            is DirectReplacementEntityCommit.Existing -> DirectReplacementCommit.Existing(
+                TaskId(committed.task.id),
+            )
+        }
+    }
 
     override suspend fun insertTasks(newTasks: List<GenerationTask>) {
         taskDao.upsertAll(newTasks.map { task -> task.toEntity() })

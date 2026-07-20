@@ -1,7 +1,10 @@
 package io.github.ayaseminami.gnbp.persistence.room
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -46,9 +49,37 @@ internal interface GenerationTaskDao {
     @Query("SELECT * FROM generation_tasks WHERE id = :id")
     suspend fun findById(id: String): GenerationTaskEntity?
 
+    @Query(
+        "SELECT * FROM generation_tasks WHERE source_task_id = :sourceTaskId " +
+            "ORDER BY created_at, id LIMIT 1",
+    )
+    suspend fun findDirectReplacement(sourceTaskId: String): GenerationTaskEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(task: GenerationTaskEntity): Long
+
+    @Transaction
+    suspend fun commitDirectReplacement(task: GenerationTaskEntity): DirectReplacementEntityCommit {
+        val sourceTaskId = requireNotNull(task.sourceTaskId)
+        if (insertIfAbsent(task) != -1L) {
+            return DirectReplacementEntityCommit.Inserted(task)
+        }
+        return DirectReplacementEntityCommit.Existing(
+            requireNotNull(findDirectReplacement(sourceTaskId)) {
+                "A task ID collision prevented the direct replacement commit"
+            },
+        )
+    }
+
     @Upsert
     suspend fun upsertAll(tasks: List<GenerationTaskEntity>)
 
     @Upsert
     suspend fun upsert(task: GenerationTaskEntity)
+}
+
+internal sealed interface DirectReplacementEntityCommit {
+    data class Inserted(val task: GenerationTaskEntity) : DirectReplacementEntityCommit
+
+    data class Existing(val task: GenerationTaskEntity) : DirectReplacementEntityCommit
 }

@@ -1,0 +1,289 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "568f6fb9be9b5769fd68ba6af9476698",
+    "entities": [
+      {
+        "tableName": "profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `provider_kind` TEXT NOT NULL, `endpoint_url` TEXT NOT NULL, `model` TEXT NOT NULL, `secret_version` INTEGER NOT NULL, `api_key_iv` BLOB NOT NULL, `api_key_ciphertext` BLOB NOT NULL, `sort_order` INTEGER NOT NULL, `security_mode` TEXT NOT NULL DEFAULT 'VERIFIED_TLS', `local_network_mode` TEXT NOT NULL DEFAULT 'INTERNET_OR_LOOPBACK_ONLY', `transport_policy_revision` INTEGER NOT NULL DEFAULT 1, `custom_ca_certificates_json` TEXT NOT NULL DEFAULT '[]', `spki_pins_json` TEXT NOT NULL DEFAULT '[]', `pinned_certificate` BLOB, `allow_hostname_mismatch` INTEGER NOT NULL DEFAULT 0, `ack_profile_id` TEXT, `ack_scheme` TEXT, `ack_host` TEXT, `ack_port` INTEGER, `ack_mode` TEXT, `ack_policy_revision` INTEGER, `ack_accepted_at` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerKind",
+            "columnName": "provider_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endpointUrl",
+            "columnName": "endpoint_url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "secretVersion",
+            "columnName": "secret_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "apiKeyIv",
+            "columnName": "api_key_iv",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "apiKeyCiphertext",
+            "columnName": "api_key_ciphertext",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "securityMode",
+            "columnName": "security_mode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'VERIFIED_TLS'"
+          },
+          {
+            "fieldPath": "localNetworkMode",
+            "columnName": "local_network_mode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'INTERNET_OR_LOOPBACK_ONLY'"
+          },
+          {
+            "fieldPath": "transportPolicyRevision",
+            "columnName": "transport_policy_revision",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "customCaCertificatesJson",
+            "columnName": "custom_ca_certificates_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "spkiPinsJson",
+            "columnName": "spki_pins_json",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'[]'"
+          },
+          {
+            "fieldPath": "pinnedCertificate",
+            "columnName": "pinned_certificate",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "allowHostnameMismatch",
+            "columnName": "allow_hostname_mismatch",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "acknowledgementProfileId",
+            "columnName": "ack_profile_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "acknowledgementScheme",
+            "columnName": "ack_scheme",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "acknowledgementHost",
+            "columnName": "ack_host",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "acknowledgementPort",
+            "columnName": "ack_port",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "acknowledgementMode",
+            "columnName": "ack_mode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "acknowledgementPolicyRevision",
+            "columnName": "ack_policy_revision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "acknowledgementAcceptedAt",
+            "columnName": "ack_accepted_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "prompts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `content` TEXT NOT NULL, `sort_order` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "content",
+            "columnName": "content",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "generation_tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `request_json` TEXT NOT NULL, `status` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `started_at` INTEGER, `finished_at` INTEGER, `source_task_id` TEXT, `terminal_reason` TEXT, `result_asset_id` TEXT, `result_uri` TEXT, `result_display_name` TEXT, `result_mime_type` TEXT, `result_byte_size` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestJson",
+            "columnName": "request_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "started_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finishedAt",
+            "columnName": "finished_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceTaskId",
+            "columnName": "source_task_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "terminalReason",
+            "columnName": "terminal_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultAssetId",
+            "columnName": "result_asset_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultUri",
+            "columnName": "result_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultDisplayName",
+            "columnName": "result_display_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultMimeType",
+            "columnName": "result_mime_type",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "resultByteSize",
+            "columnName": "result_byte_size",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_generation_tasks_source_task_id",
+            "unique": true,
+            "columnNames": [
+              "source_task_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_generation_tasks_source_task_id` ON `${TABLE_NAME}` (`source_task_id`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '568f6fb9be9b5769fd68ba6af9476698')"
+    ]
+  }
+}

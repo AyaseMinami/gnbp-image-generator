@@ -1,15 +1,21 @@
 package io.github.ayaseminami.gnbp.generation
 
+import android.content.Context
 import android.net.Uri
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.GeneratedAssetStore
+import io.github.ayaseminami.gnbp.media.ImagePreparationFailure
 import io.github.ayaseminami.gnbp.media.ImagePreparationResult
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
+import io.github.ayaseminami.gnbp.persistence.room.GnbpDatabase
+import io.github.ayaseminami.gnbp.persistence.task.RoomGenerationTaskRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
 import io.github.ayaseminami.gnbp.provider.GenerationCancellation
@@ -28,12 +34,16 @@ import io.github.ayaseminami.gnbp.provider.transport.TransportBinding
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -456,6 +466,298 @@ class GenerationEngineTest {
     }
 
     @Test
+    fun `concurrent retries create one direct replacement`() = runTest {
+        val sourceId = TaskId("failed-source")
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = sourceId,
+                    request = taskRequestSnapshot().copy(
+                        references = listOf(
+                            ReferenceAssetSnapshot(
+                                id = "durable-reference",
+                                displayName = "reference.jpg",
+                                mimeType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                    status = TaskStatus.Failed(TaskFailureReason.Transport),
+                    createdAtEpochMillis = 100L,
+                    finishedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val preparationsStarted = Channel<Unit>(Channel.UNLIMITED)
+        val allowPreparation = CompletableDeferred<Unit>()
+        val provider = ControlledProvider()
+        val engine = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory { provider },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = ReferencePreparer { reference ->
+                preparationsStarted.send(Unit)
+                allowPreparation.await()
+                ImagePreparationResult.Prepared(
+                    reference = ReferenceImage(
+                        bytes = byteArrayOf(4, 5, 6),
+                        mimeType = reference.mimeType,
+                        displayName = reference.displayName,
+                    ),
+                    width = 12,
+                    height = 12,
+                )
+            },
+            profileLoader = { geminiProfile() },
+            maxConcurrency = 2,
+            externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+            idGenerator = { "retry-one" },
+        )
+        try {
+            val firstRetry = async { engine.retry(sourceId) }
+            preparationsStarted.receive()
+            val secondRetry = async { engine.retry(sourceId) }
+            runCurrent()
+            assertTrue(preparationsStarted.tryReceive().isFailure)
+            allowPreparation.complete(Unit)
+
+            val firstResult = firstRetry.await()
+            val secondResult = secondRetry.await()
+            assertEquals(firstResult, secondResult)
+            assertTrue(firstResult is RetryResult.Enqueued)
+            provider.started.receive()
+            assertTrue(provider.started.tryReceive().isFailure)
+
+            val thirdResult = engine.retry(sourceId)
+            assertEquals(firstResult, thirdResult)
+            assertTrue(preparationsStarted.tryReceive().isFailure)
+            assertTrue(provider.started.tryReceive().isFailure)
+            assertEquals(
+                1,
+                repository.loadTasks().count { task -> task.sourceTaskId == sourceId },
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `concurrent engine instances return the one persisted direct replacement`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val repository = RoomGenerationTaskRepository(database.taskDao())
+        val sourceId = TaskId("failed-source")
+        repository.insertTasks(
+            listOf(
+                GenerationTask(
+                    id = sourceId,
+                    request = taskRequestSnapshot().copy(
+                        references = listOf(
+                            ReferenceAssetSnapshot(
+                                id = "durable-reference",
+                                displayName = "reference.jpg",
+                                mimeType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                    status = TaskStatus.Failed(TaskFailureReason.Transport),
+                    createdAtEpochMillis = 100L,
+                    finishedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val preparationsStarted = Channel<Unit>(Channel.UNLIMITED)
+        val allowPreparation = CompletableDeferred<Unit>()
+        val preparer = ReferencePreparer { reference ->
+            preparationsStarted.send(Unit)
+            allowPreparation.await()
+            ImagePreparationResult.Prepared(
+                reference = ReferenceImage(
+                    bytes = byteArrayOf(4, 5, 6),
+                    mimeType = reference.mimeType,
+                    displayName = reference.displayName,
+                ),
+                width = 12,
+                height = 12,
+            )
+        }
+        fun newEngine(id: String) = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory { ControlledProvider() },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = preparer,
+            profileLoader = { geminiProfile() },
+            maxConcurrency = 1,
+            externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+            idGenerator = { id },
+        )
+        val firstEngine = newEngine("retry-one")
+        val secondEngine = newEngine("retry-two")
+        try {
+            val firstRetry = async { firstEngine.retry(sourceId) }
+            val secondRetry = async { secondEngine.retry(sourceId) }
+            preparationsStarted.receive()
+            preparationsStarted.receive()
+            allowPreparation.complete(Unit)
+
+            assertEquals(firstRetry.await(), secondRetry.await())
+            assertEquals(
+                1,
+                repository.loadTasks().count { task -> task.sourceTaskId == sourceId },
+            )
+        } finally {
+            firstEngine.close()
+            secondEngine.close()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `failed retry preparation returns a concurrently committed replacement`() = runTest {
+        val sourceId = TaskId("failed-source")
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = sourceId,
+                    request = taskRequestSnapshot().copy(
+                        references = listOf(
+                            ReferenceAssetSnapshot(
+                                id = "durable-reference",
+                                displayName = "reference.jpg",
+                                mimeType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                    status = TaskStatus.Failed(TaskFailureReason.Transport),
+                    createdAtEpochMillis = 100L,
+                    finishedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val failingPreparationStarted = CompletableDeferred<Unit>()
+        val allowFailingPreparationToFinish = CompletableDeferred<Unit>()
+        fun newEngine(
+            preparer: ReferencePreparer,
+            id: String,
+        ) = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory { ControlledProvider() },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = preparer,
+            profileLoader = { geminiProfile() },
+            maxConcurrency = 1,
+            externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+            idGenerator = { id },
+        )
+        val failingEngine = newEngine(
+            preparer = ReferencePreparer {
+                failingPreparationStarted.complete(Unit)
+                allowFailingPreparationToFinish.await()
+                ImagePreparationResult.Failed(ImagePreparationFailure.SourceMissing)
+            },
+            id = "unused-replacement",
+        )
+        val successfulEngine = newEngine(
+            preparer = ReferencePreparer { reference ->
+                ImagePreparationResult.Prepared(
+                    reference = ReferenceImage(
+                        bytes = byteArrayOf(4, 5, 6),
+                        mimeType = reference.mimeType,
+                        displayName = reference.displayName,
+                    ),
+                    width = 12,
+                    height = 12,
+                )
+            },
+            id = "committed-replacement",
+        )
+        try {
+            val failingRetry = async { failingEngine.retry(sourceId) }
+            failingPreparationStarted.await()
+            val successfulResult = successfulEngine.retry(sourceId)
+            allowFailingPreparationToFinish.complete(Unit)
+
+            assertEquals(successfulResult, failingRetry.await())
+            assertEquals(
+                RetryResult.Enqueued(TaskId("committed-replacement")),
+                successfulResult,
+            )
+            assertEquals(
+                1,
+                repository.loadTasks().count { task -> task.sourceTaskId == sourceId },
+            )
+        } finally {
+            failingEngine.close()
+            successfulEngine.close()
+        }
+    }
+
+    @Test
+    fun `concurrent retries share one unavailable snapshot result`() = runTest {
+        val sourceId = TaskId("failed-source")
+        val repository = InMemoryTaskRepository(
+            listOf(
+                GenerationTask(
+                    id = sourceId,
+                    request = taskRequestSnapshot().copy(
+                        references = listOf(
+                            ReferenceAssetSnapshot(
+                                id = "missing-reference",
+                                displayName = "reference.jpg",
+                                mimeType = "image/jpeg",
+                            ),
+                        ),
+                    ),
+                    status = TaskStatus.Failed(TaskFailureReason.Transport),
+                    createdAtEpochMillis = 100L,
+                    finishedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val preparationStarted = CompletableDeferred<Unit>()
+        val allowPreparationToFail = CompletableDeferred<Unit>()
+        val preparationCount = AtomicInteger()
+        val engine = DefaultGenerationEngine(
+            taskRepository = repository,
+            providerFactory = GenerationProviderFactory { ControlledProvider() },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = ReferencePreparer {
+                preparationCount.incrementAndGet()
+                preparationStarted.complete(Unit)
+                allowPreparationToFail.await()
+                ImagePreparationResult.Failed(ImagePreparationFailure.SourceMissing)
+            },
+            profileLoader = { geminiProfile() },
+            maxConcurrency = 1,
+            externalScope = backgroundScope,
+            resultJournal = NoOpGenerationResultJournal,
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+            idGenerator = { "unused-replacement" },
+        )
+        try {
+            val firstRetry = async { engine.retry(sourceId) }
+            preparationStarted.await()
+            val secondRetry = async { engine.retry(sourceId) }
+            runCurrent()
+            allowPreparationToFail.complete(Unit)
+
+            assertEquals(RetryResult.SnapshotUnavailable, firstRetry.await())
+            assertEquals(RetryResult.SnapshotUnavailable, secondRetry.await())
+            assertEquals(1, preparationCount.get())
+            assertTrue(repository.loadTasks().none { task -> task.sourceTaskId == sourceId })
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `asset storage failure after a provider response is a known failure`() = runTest {
         val repository = InMemoryTaskRepository()
         val provider = SequenceProvider(
@@ -675,6 +977,7 @@ private class InMemoryTaskRepository(
     initialTasks: List<GenerationTask> = emptyList(),
 ) : GenerationTaskRepository {
     private val tasks = MutableStateFlow(initialTasks)
+    private val replacementMutex = Mutex()
 
     override fun observeTasks(): Flow<List<GenerationTask>> = tasks
 
@@ -682,6 +985,16 @@ private class InMemoryTaskRepository(
 
     override suspend fun findTask(id: TaskId): GenerationTask? =
         tasks.value.firstOrNull { it.id == id }
+
+    override suspend fun commitDirectReplacement(task: GenerationTask): DirectReplacementCommit =
+        replacementMutex.withLock {
+            val sourceTaskId = requireNotNull(task.sourceTaskId)
+            findDirectReplacement(sourceTaskId)?.let { existing ->
+                return@withLock DirectReplacementCommit.Existing(existing.id)
+            }
+            insertTasks(listOf(task))
+            DirectReplacementCommit.Inserted(task.id)
+        }
 
     override suspend fun insertTasks(newTasks: List<GenerationTask>) {
         tasks.value = (newTasks + tasks.value).sortedByDescending(GenerationTask::createdAtEpochMillis)

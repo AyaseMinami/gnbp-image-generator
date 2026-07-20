@@ -25,9 +25,12 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
@@ -58,6 +61,7 @@ internal class DefaultGenerationEngine(
     private val stateMutex = Mutex()
     private val ready = CompletableDeferred<Unit>()
     private val snapshots = mutableMapOf<TaskId, ExecutionSnapshot>()
+    private val retryAttempts = mutableMapOf<TaskId, Deferred<RetryResult>>()
     private val activeCancellations = ConcurrentHashMap<TaskId, GenerationCancellation>()
     private val requestedCancellations = ConcurrentHashMap.newKeySet<TaskId>()
 
@@ -142,36 +146,83 @@ internal class DefaultGenerationEngine(
 
     override suspend fun retry(id: TaskId): RetryResult {
         ready.await()
-        val sourceTask = stateMutex.withLock { taskRepository.findTask(id) }
-            ?: return RetryResult.NotFound
-        if (
-            sourceTask.status !is TaskStatus.Failed &&
-            sourceTask.status !is TaskStatus.Cancelled &&
-            sourceTask.status !is TaskStatus.OutcomeUnknown
-        ) {
-            return RetryResult.NotRetryable
+        val admission = stateMutex.withLock {
+            val sourceTask = taskRepository.findTask(id)
+                ?: return@withLock RetryAdmission.Complete(RetryResult.NotFound)
+            taskRepository.findDirectReplacement(id)?.let { existing ->
+                return@withLock RetryAdmission.Complete(RetryResult.Enqueued(existing.id))
+            }
+            if (!sourceTask.status.isRetryable()) {
+                return@withLock RetryAdmission.Complete(RetryResult.NotRetryable)
+            }
+            retryAttempts[id]?.let { attempt ->
+                return@withLock RetryAdmission.Await(attempt)
+            }
+            val attempt = scope.async(start = CoroutineStart.LAZY) {
+                try {
+                    executeRetryAttempt(id, sourceTask)
+                } finally {
+                    stateMutex.withLock { retryAttempts.remove(id) }
+                }
+            }
+            retryAttempts[id] = attempt
+            attempt.start()
+            RetryAdmission.Await(attempt)
         }
+        return when (admission) {
+            is RetryAdmission.Complete -> admission.result
+            is RetryAdmission.Await -> admission.result.await()
+        }
+    }
+
+    private suspend fun executeRetryAttempt(
+        id: TaskId,
+        sourceTask: GenerationTask,
+    ): RetryResult {
         val execution = when (val built = buildExecutionSnapshot(sourceTask.request)) {
             is ExecutionBuildResult.Ready -> built.snapshot
             ExecutionBuildResult.ProfileUnavailable,
             is ExecutionBuildResult.ReferenceUnavailable,
-            -> return RetryResult.SnapshotUnavailable
+            -> return stateMutex.withLock {
+                taskRepository.findDirectReplacement(id)?.let { existing ->
+                    RetryResult.Enqueued(existing.id)
+                } ?: RetryResult.SnapshotUnavailable
+            }
         }
-        val task = stateMutex.withLock {
-            val newId = nextUniqueTaskId(emptySet())
-            val newTask = GenerationTask(
-                id = newId,
-                request = sourceTask.request,
+        val committed = stateMutex.withLock {
+            val currentSource = taskRepository.findTask(id)
+                ?: return@withLock RetryCommit.NotFound
+            taskRepository.findDirectReplacement(id)?.let { existing ->
+                return@withLock RetryCommit.Existing(existing.id)
+            }
+            if (!currentSource.status.isRetryable()) {
+                return@withLock RetryCommit.NotRetryable
+            }
+            val taskId = nextUniqueTaskId(emptySet())
+            val task = GenerationTask(
+                id = taskId,
+                request = currentSource.request,
                 status = TaskStatus.Queued,
                 createdAtEpochMillis = nowEpochMillis(),
                 sourceTaskId = id,
             )
-            snapshots[newId] = execution.copyOwned()
-            taskRepository.insertTasks(listOf(newTask))
-            newTask
+            when (val commit = taskRepository.commitDirectReplacement(task)) {
+                is DirectReplacementCommit.Inserted -> {
+                    snapshots[commit.taskId] = execution.copyOwned()
+                    RetryCommit.Created(commit.taskId)
+                }
+                is DirectReplacementCommit.Existing -> RetryCommit.Existing(commit.taskId)
+            }
         }
-        queue.send(task.id)
-        return RetryResult.Enqueued(task.id)
+        return when (committed) {
+            is RetryCommit.Created -> {
+                queue.send(committed.taskId)
+                RetryResult.Enqueued(committed.taskId)
+            }
+            is RetryCommit.Existing -> RetryResult.Enqueued(committed.taskId)
+            RetryCommit.NotFound -> RetryResult.NotFound
+            RetryCommit.NotRetryable -> RetryResult.NotRetryable
+        }
     }
 
     override fun close() {
@@ -561,6 +612,25 @@ private sealed interface ExecutionBuildResult {
 
     data class ReferenceUnavailable(val assetId: String) : ExecutionBuildResult
 }
+
+private sealed interface RetryAdmission {
+    data class Complete(val result: RetryResult) : RetryAdmission
+
+    data class Await(val result: Deferred<RetryResult>) : RetryAdmission
+}
+
+private sealed interface RetryCommit {
+    data class Created(val taskId: TaskId) : RetryCommit
+
+    data class Existing(val taskId: TaskId) : RetryCommit
+
+    data object NotFound : RetryCommit
+
+    data object NotRetryable : RetryCommit
+}
+
+private fun TaskStatus.isRetryable(): Boolean =
+    this is TaskStatus.Failed || this is TaskStatus.Cancelled || this is TaskStatus.OutcomeUnknown
 
 private fun ReferenceImage.copyOwned(): ReferenceImage =
     ReferenceImage(bytes.copyOf(), mimeType, displayName)

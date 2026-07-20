@@ -44,7 +44,7 @@ class GnbpPersistence private constructor(
                 GnbpDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
+                .addMigrations(*GnbpDatabase.ALL_MIGRATIONS)
                 .build()
             val cipher = AesGcmSecretCipher(AndroidKeystoreSecretKeyProvider())
             val dataStore = PreferenceDataStoreFactory.create(

@@ -81,7 +81,7 @@ class RoomPersistenceRestartTest {
 
     private fun openDatabase(context: Context, databaseName: String): GnbpDatabase =
         Room.databaseBuilder(context, GnbpDatabase::class.java, databaseName)
-            .addMigrations(GnbpDatabase.MIGRATION_1_2, GnbpDatabase.MIGRATION_2_3)
+            .addMigrations(*GnbpDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 

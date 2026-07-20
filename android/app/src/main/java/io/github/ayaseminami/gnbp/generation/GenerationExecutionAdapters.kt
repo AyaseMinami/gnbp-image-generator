@@ -13,12 +13,25 @@ internal fun interface ReferencePreparer {
     suspend fun prepare(asset: ReferenceAssetInput): ImagePreparationResult
 }
 
+sealed interface DirectReplacementCommit {
+    data class Inserted(val taskId: TaskId) : DirectReplacementCommit
+
+    data class Existing(val taskId: TaskId) : DirectReplacementCommit
+}
+
 interface GenerationTaskRepository {
     fun observeTasks(): Flow<List<GenerationTask>>
 
     suspend fun loadTasks(): List<GenerationTask>
 
     suspend fun findTask(id: TaskId): GenerationTask?
+
+    suspend fun findDirectReplacement(sourceTaskId: TaskId): GenerationTask? =
+        loadTasks()
+            .filter { task -> task.sourceTaskId == sourceTaskId }
+            .minWithOrNull(compareBy(GenerationTask::createdAtEpochMillis, { task -> task.id.value }))
+
+    suspend fun commitDirectReplacement(task: GenerationTask): DirectReplacementCommit
 
     suspend fun insertTasks(newTasks: List<GenerationTask>)
 
