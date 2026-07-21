@@ -396,12 +396,31 @@ val verifyReleaseCandidate by tasks.registering {
     group = "verification"
     description = "Validates the exact signed Android release candidate without signing secrets."
     dependsOn(
-        verifyReleaseBuild,
         verifyReleaseCandidateZipAlignment,
         verifyReleaseCandidateElfAlignment,
         verifyReleaseCandidateSignature,
         verifyReleaseCandidateManifest,
     )
+}
+
+val releaseCandidateConflictingTaskNames = setOf(
+    "assembleRelease",
+    "bundleRelease",
+    "packageRelease",
+    "verifyReleaseBuild",
+)
+
+gradle.taskGraph.whenReady {
+    if (hasTask(verifyReleaseCandidate.get())) {
+        val conflictingTasks = allTasks.filter { task ->
+            task.name in releaseCandidateConflictingTaskNames
+        }
+        check(conflictingTasks.isEmpty()) {
+            "verifyReleaseCandidate must run by itself after signing; " +
+                "the same invocation contains release-producing tasks: " +
+                conflictingTasks.joinToString { task -> task.path }
+        }
+    }
 }
 
 tasks.named("preBuild").configure {

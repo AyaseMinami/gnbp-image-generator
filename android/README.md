@@ -52,10 +52,12 @@ The debug APK is generated under `app/build/outputs/apk/debug/`, and the
 unsigned Release APK is generated under `app/build/outputs/apk/release/`.
 Build output is ignored by Git. `verifyReleaseBuild` includes `check`, release
 lint, offline unit tests, the network-construction chokepoint, and ZIP/arm64 ELF
-16 KB guards for both debug and unsigned Release APKs.
+16 KB guards for both debug and unsigned Release APKs. Finish this build-side
+verification before opening Android Studio's signed-APK wizard.
 
 After signing the Release APK outside Gradle, validate the exact candidate
-without exposing signing material:
+without exposing signing material. Store it in the repository-root ignored
+`release-candidates/` directory rather than under `app/build/`:
 
 ```powershell
 .\gradlew.bat verifyReleaseCandidate `
@@ -67,6 +69,12 @@ Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 The candidate task accepts only the APK path and public certificate digest. It
 does not accept or read a keystore path, alias, password, or signing config. It
 also rejects Debug APKs and candidates with a different package or version.
+It runs only candidate-file checks and never assembles a Release APK. Do not
+combine it with `verifyReleaseBuild`, `assembleRelease`, `packageRelease`, or
+another Release-producing task in the same Gradle invocation; a task-graph
+guard rejects that combination before execution. Running another Release build
+after Android Studio signs may remove the wizard's injected output, even when
+that output is outside `app/build/`.
 
 Automated tests must remain offline and must never call a real image provider.
 Do not commit `local.properties`, credentials, private endpoints, signing
