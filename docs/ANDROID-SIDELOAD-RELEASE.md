@@ -23,9 +23,10 @@ development plan.
 - Back up the keystore and its recovery information separately. Losing it means
   future APKs cannot be signed as the same application identity.
 
-The repository ignores `*.jks`, `*.keystore`, APK/AAB output, `local.properties`,
-and Gradle build directories. This is a guardrail, not a substitute for checking
-the staged diff before every release commit.
+The repository ignores `*.jks`, `*.keystore`, APK/AAB output,
+`release-candidates/`, `local.properties`, and Gradle build directories. This
+is a guardrail, not a substitute for checking the staged diff before every
+release commit.
 
 ## 2. Prepare The Candidate
 
@@ -59,10 +60,12 @@ the staged diff before every release commit.
 
 ## 3. Build And Verify The Signed APK
 
-Use Android Studio's signed-APK wizard with the `release` build variant. The
-output remains under an ignored `app/build/` directory. Record the public
-certificate SHA-256 digest from the wizard or `apksigner`, then run the
-repository validator from `android/` against that exact signed APK:
+Only after Section 2's `verifyReleaseBuild` succeeds, use Android Studio's
+signed-APK wizard with the `release` build variant. Write the output to the
+repository-root ignored `release-candidates/` directory, for example
+`D:\AI\gnbp-image-generator\release-candidates`. Record the public certificate
+SHA-256 digest from the wizard or `apksigner`, then run the repository validator
+from `android/` against that exact signed APK:
 
 ```powershell
 .\gradlew.bat verifyReleaseCandidate `
@@ -71,17 +74,28 @@ repository validator from `android/` against that exact signed APK:
 Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 ```
 
-`verifyReleaseCandidate` first reruns the CI-safe unsigned Release checks, then
-uses SDK `apksigner` to verify the supplied APK and compare its public
-certificate digest, runs `zipalign -c -P 16`, and parses every packaged arm64
-ELF program header, rejecting any `LOAD.p_align < 0x4000`. The APK path may be
-absolute or relative to `android/`; the certificate digest must contain exactly
-64 hexadecimal digits, with optional colons or spaces. These Gradle properties
-accept only the APK path and public digest. No keystore path, alias, password,
-or signing configuration is accepted by the task. The validator also uses
-`aapt2 dump badging` to require the application ID
+`verifyReleaseCandidate` does not rerun `verifyReleaseBuild`, assemble an APK,
+or invoke any other Release-producing task. It uses SDK `apksigner` to verify
+the supplied APK and compare its public certificate digest, runs
+`zipalign -c -P 16`, and parses every packaged arm64 ELF program header,
+rejecting any `LOAD.p_align < 0x4000`. The APK path may be absolute or relative
+to `android/`; the certificate digest must contain exactly 64 hexadecimal
+digits, with optional colons or spaces. These Gradle properties accept only the
+APK path and public digest. No keystore path, alias, password, or signing
+configuration is accepted by the task. The validator also uses `aapt2 dump
+badging` to require the application ID
 `io.github.ayaseminami.gnbp`, `versionCode = 1`, `versionName = 0.1.0`, and a
 non-debuggable manifest, so a Debug APK cannot pass as the release candidate.
+
+Run candidate validation in a separate Gradle invocation. Do not combine it
+with `verifyReleaseBuild`, `assembleRelease`, `packageRelease`, or another
+Release-producing task. A task-graph guard rejects known unsafe combinations
+before execution. Android Studio supplies a temporary output location to the
+Release packaging task; a later Release build can treat the signed APK as stale
+task output and remove it even when the destination is outside `app/build/`.
+Therefore the fixed order is: build-side verification, Android Studio signing,
+then candidate-only verification. Do not run another Release build between
+signing and installation.
 
 Record only the public certificate digest, APK SHA-256, and redacted task
 results in release evidence. Do not record keystore locations or credentials.
