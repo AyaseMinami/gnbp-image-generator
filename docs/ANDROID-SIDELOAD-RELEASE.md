@@ -1,6 +1,6 @@
 # Android Sideload Release Guide
 
-Status: M8 release-candidate plan approved; signed-candidate evidence remains pending
+Status: M8 release-candidate implementation in progress; signed-candidate evidence remains pending
 
 This guide covers the signed APK workflow for the first side-loaded Android
 edition. It does not authorize a release by itself. The M7 reliability
@@ -31,16 +31,15 @@ the staged diff before every release commit.
 
 1. Set the monotonic `versionCode` and public `versionName` in
    `android/app/build.gradle.kts`.
-2. Run the offline verification suite from `android/`:
+2. Run the CI-safe release verification from `android/`:
 
    ```powershell
-   .\gradlew.bat check assembleDebugAndroidTest
+   .\gradlew.bat verifyReleaseBuild assembleDebugAndroidTest
    ```
 
-   `check` includes lint, offline unit tests, the network chokepoint, and the
-   debug APK ZIP/ELF guards. M8 must add an explicit release-candidate check;
-   before that task exists and passes against the exact final signed APK, this
-   guide is not a release authorization.
+   `verifyReleaseBuild` runs `check`, `lintRelease`, assembles the unsigned
+   Release APK, and checks both its ZIP 16 KB alignment and every arm64 ELF
+   `LOAD.p_align`. It does not sign anything and it never reads a keystore.
 3. Confirm the blocking device matrix is green on API 26, 29, 33, and 36.
    API 37 16 KB remains a non-blocking hosted-CI signal, but a successful
    Firebase Test Lab or physical 16 KB device run is mandatory before any tag or
@@ -61,19 +60,31 @@ the staged diff before every release commit.
 ## 3. Build And Verify The Signed APK
 
 Use Android Studio's signed-APK wizard with the `release` build variant. The
-output remains under an ignored `app/build/` directory. Then verify it with the
-SDK tools matching the installed build-tools version:
+output remains under an ignored `app/build/` directory. Record the public
+certificate SHA-256 digest from the wizard or `apksigner`, then run the
+repository validator from `android/` against that exact signed APK:
 
 ```powershell
-& "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --verbose --print-certs <signed-apk>
-& "$env:ANDROID_HOME\build-tools\36.0.0\zipalign.exe" -c -P 16 -v 4 <signed-apk>
+.\gradlew.bat verifyReleaseCandidate `
+  --project-prop gnbp.releaseCandidateApk="C:\path\to\app-release.apk" `
+  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>"
+Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 ```
 
-Check that `apksigner` reports the expected release certificate rather than the
-Android debug certificate. Record only the public certificate digest and tool
-results in release evidence; do not record keystore locations or credentials.
-The M8 candidate validator must also parse every packaged arm64 ELF program
-header from this exact signed APK and reject any `LOAD.p_align < 0x4000`.
+`verifyReleaseCandidate` first reruns the CI-safe unsigned Release checks, then
+uses SDK `apksigner` to verify the supplied APK and compare its public
+certificate digest, runs `zipalign -c -P 16`, and parses every packaged arm64
+ELF program header, rejecting any `LOAD.p_align < 0x4000`. The APK path may be
+absolute or relative to `android/`; the certificate digest must contain exactly
+64 hexadecimal digits, with optional colons or spaces. These Gradle properties
+accept only the APK path and public digest. No keystore path, alias, password,
+or signing configuration is accepted by the task. The validator also uses
+`aapt2 dump badging` to require the application ID
+`io.github.ayaseminami.gnbp`, `versionCode = 1`, `versionName = 0.1.0`, and a
+non-debuggable manifest, so a Debug APK cannot pass as the release candidate.
+
+Record only the public certificate digest, APK SHA-256, and redacted task
+results in release evidence. Do not record keystore locations or credentials.
 
 ## 4. Sideload Acceptance Check
 

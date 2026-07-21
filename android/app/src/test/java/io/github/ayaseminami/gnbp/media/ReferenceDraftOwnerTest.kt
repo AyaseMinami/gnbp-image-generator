@@ -96,6 +96,41 @@ class ReferenceDraftOwnerTest {
         assertFalse(second.file.exists())
     }
 
+    @Test
+    fun `pending permission submission is consumed once without releasing draft ownership`() {
+        val first = asset("first")
+        val second = asset("second")
+        val owner = ReferenceDraftOwner { asset -> asset.file.delete() }
+        owner.accept(
+            listOf(
+                ReferenceImportResult.Imported(first),
+                ReferenceImportResult.Imported(second),
+            ),
+        )
+
+        owner.retainPendingPermissionSubmission(listOf(first))
+
+        assertEquals(listOf(first), owner.consumePendingPermissionSubmission())
+        assertEquals(null, owner.consumePendingPermissionSubmission())
+        assertEquals(listOf(first, second), owner.state.value.assets)
+        assertTrue(first.file.exists())
+        assertTrue(second.file.exists())
+    }
+
+    @Test
+    fun `denied permission discards the pending submission but keeps the draft recoverable`() {
+        val first = asset("first")
+        val owner = ReferenceDraftOwner { asset -> asset.file.delete() }
+        owner.accept(listOf(ReferenceImportResult.Imported(first)))
+        owner.retainPendingPermissionSubmission(listOf(first))
+
+        owner.discardPendingPermissionSubmission()
+
+        assertEquals(null, owner.consumePendingPermissionSubmission())
+        assertEquals(listOf(first), owner.state.value.assets)
+        assertTrue(first.file.exists())
+    }
+
     private fun asset(id: String): DurableReferenceAsset {
         val file = File(root, "$id.input").apply { writeText("image") }
         return DurableReferenceAsset(
