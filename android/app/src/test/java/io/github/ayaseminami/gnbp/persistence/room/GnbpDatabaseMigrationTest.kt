@@ -28,6 +28,81 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class GnbpDatabaseMigrationTest {
     @Test
+    fun `migration backfills successful tasks into generated results exactly once`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "gnbp-result-migration-${System.nanoTime()}.db"
+        val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(databaseName)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(4) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE generation_tasks (" +
+                                "id TEXT NOT NULL PRIMARY KEY, " +
+                                "request_json TEXT NOT NULL, " +
+                                "status TEXT NOT NULL, " +
+                                "created_at INTEGER NOT NULL, " +
+                                "started_at INTEGER, " +
+                                "finished_at INTEGER, " +
+                                "source_task_id TEXT, " +
+                                "terminal_reason TEXT, " +
+                                "result_asset_id TEXT, " +
+                                "result_uri TEXT, " +
+                                "result_display_name TEXT, " +
+                                "result_mime_type TEXT, " +
+                                "result_byte_size INTEGER)",
+                        )
+                        db.execSQL(
+                            "INSERT INTO generation_tasks (" +
+                                "id, request_json, status, created_at, finished_at, result_asset_id, " +
+                                "result_uri, result_display_name, result_mime_type, result_byte_size" +
+                                ") VALUES (?, ?, 'SUCCEEDED', ?, ?, ?, ?, ?, ?, ?)",
+                            arrayOf<Any?>(
+                                "successful-task",
+                                "{\"profileId\":\"profile-one\",\"profileName\":\"Gemini\",\"providerKind\":\"Gemini\",\"model\":\"model\",\"prompt\":\"backfilled prompt\",\"parameters\":{\"kind\":\"GEMINI\",\"aspectRatio\":\"3:4\",\"imageSize\":\"2K\",\"temperature\":0.7},\"references\":[]}",
+                                100L,
+                                200L,
+                                "asset-one",
+                                "content://gnbp/asset-one",
+                                "asset-one.png",
+                                "image/png",
+                                3L,
+                            ),
+                        )
+                        db.execSQL(
+                            "INSERT INTO generation_tasks (id, request_json, status, created_at) " +
+                                "VALUES ('failed-task', '{}', 'FAILED', 300)",
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int,
+                    ) = Unit
+                },
+            )
+            .build()
+        FrameworkSQLiteOpenHelperFactory().create(configuration).use { helper ->
+            val database = helper.writableDatabase
+            GnbpDatabase.MIGRATION_4_5.migrate(database)
+            GnbpDatabase.MIGRATION_4_5.migrate(database)
+
+            database.query(
+                "SELECT id, source_task_id, created_at, is_favorite FROM generated_results",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("result-successful-task", cursor.getString(0))
+                assertEquals("successful-task", cursor.getString(1))
+                assertEquals(200L, cursor.getLong(2))
+                assertEquals(0, cursor.getInt(3))
+                assertTrue(!cursor.moveToNext())
+            }
+        }
+        assertTrue(context.deleteDatabase(databaseName))
+    }
+
+    @Test
     fun `migration fills strict transport defaults without replacing legacy data`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "gnbp-migration-${System.nanoTime()}.db"

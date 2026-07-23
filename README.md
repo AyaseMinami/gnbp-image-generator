@@ -207,7 +207,9 @@ when Python 3.11 is unavailable.
 The native Kotlin/Compose Android edition lives in `android/`. Its M1-M7
 implementation and independent reviews are complete, including core generation,
 reference images, batch tasks, Gallery, encrypted credentials, and reliable
-foreground execution. It is not a screen-for-screen desktop port; remaining
+foreground execution. M9 is now implementing the approved final feature slices
+before RC2, starting with the durable generated-result library. It is not a
+screen-for-screen desktop port; remaining
 desktop convenience gaps are tracked in
 [`contracts/PLATFORM-PARITY.md`](contracts/PLATFORM-PARITY.md).
 

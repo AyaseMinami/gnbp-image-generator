@@ -179,10 +179,9 @@ trust-all/cleartext modes, LAN opt-in, preview behavior, concurrency, and
 completion-notification choices. Unsafe profiles remain visibly marked on both
 Settings and Generate.
 
-Gallery derives results from persisted successful tasks and provides bounded
-thumbnails, preview, Android sharing, and reuse through the durable reference
-copy path. Task diagnostics map typed failures to localized guidance without
-showing provider text, prompts, endpoints, or secrets. Completion notifications
+Gallery provides bounded thumbnails, preview, Android sharing, and reuse through
+the durable reference-copy path. Task diagnostics map typed failures to localized
+guidance without showing provider text, prompts, endpoints, or secrets. Completion notifications
 introduced in M6 are now owned by the M7 foreground runtime, which also supplies
 ongoing work notification and process-death reconciliation.
 
@@ -192,6 +191,13 @@ M6 passed 100 offline Android tests, independent security-focused review, and
 the blocking API 26/29/33/36 device matrix in CI run
 [`29681595718`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681595718).
 The user formally released the milestone on 2026-07-19.
+
+## M9 Generated-Result Library
+
+M9 Issue #10 moves Gallery onto an independent Room-backed generated-result
+collection. Successful tasks commit one durable result containing the MediaStore
+reference and request snapshot; result lifetime is independent of task history,
+and favorite state persists across process restarts.
 
 ## Reliable Background Execution (M7)
 

@@ -36,6 +36,10 @@
     <string name="gallery_empty">完成的图像会显示在这里</string>
     <string name="gallery_thumbnail">生成结果缩略图</string>
     <string name="gallery_thumbnail_unavailable">缩略图不可用</string>
+    <string name="gallery_favorites_only">仅收藏</string>
+    <string name="gallery_favorites_empty">还没有收藏的结果</string>
+    <string name="favorite_result">收藏结果</string>
+    <string name="unfavorite_result">取消收藏</string>
     <string name="share_result">分享结果</string>
     <string name="share_chooser_title">分享生成结果</string>
     <string name="reuse_as_reference">作为参考图复用</string>

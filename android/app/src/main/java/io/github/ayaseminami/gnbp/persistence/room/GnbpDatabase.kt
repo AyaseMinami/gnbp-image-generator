@@ -6,8 +6,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ProfileEntity::class, PromptEntity::class, GenerationTaskEntity::class],
-    version = 4,
+    entities = [
+        ProfileEntity::class,
+        PromptEntity::class,
+        GenerationTaskEntity::class,
+        GeneratedResultEntity::class,
+    ],
+    version = 5,
     exportSchema = true,
 )
 abstract class GnbpDatabase : RoomDatabase() {
@@ -16,6 +21,8 @@ abstract class GnbpDatabase : RoomDatabase() {
     internal abstract fun promptDao(): PromptDao
 
     internal abstract fun taskDao(): GenerationTaskDao
+
+    internal abstract fun generatedResultDao(): GeneratedResultDao
 
     companion object {
         val MIGRATION_1_2: Migration = object : Migration(1, 2) {
@@ -90,10 +97,47 @@ abstract class GnbpDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS generated_results (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "source_task_id TEXT NOT NULL, " +
+                        "request_json TEXT NOT NULL, " +
+                        "created_at INTEGER NOT NULL, " +
+                        "asset_id TEXT NOT NULL, " +
+                        "asset_uri TEXT NOT NULL, " +
+                        "asset_display_name TEXT NOT NULL, " +
+                        "asset_mime_type TEXT NOT NULL, " +
+                        "asset_byte_size INTEGER NOT NULL, " +
+                        "is_favorite INTEGER NOT NULL DEFAULT 0)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_generated_results_source_task_id` ON " +
+                        "`generated_results` (`source_task_id`)",
+                )
+                db.execSQL(
+                    "INSERT OR IGNORE INTO generated_results (" +
+                        "id, source_task_id, request_json, created_at, asset_id, asset_uri, " +
+                        "asset_display_name, asset_mime_type, asset_byte_size, is_favorite" +
+                        ") SELECT " +
+                        "'result-' || id, id, request_json, COALESCE(finished_at, created_at), " +
+                        "result_asset_id, result_uri, result_display_name, result_mime_type, " +
+                        "result_byte_size, 0 FROM generation_tasks " +
+                        "WHERE status = 'SUCCEEDED' " +
+                        "AND result_asset_id IS NOT NULL AND result_uri IS NOT NULL " +
+                        "AND result_display_name IS NOT NULL AND result_mime_type IS NOT NULL " +
+                        "AND result_byte_size IS NOT NULL",
+                )
+            }
+        }
+
         internal val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
+            MIGRATION_4_5,
         )
     }
 }

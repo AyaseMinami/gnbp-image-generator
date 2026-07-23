@@ -15,6 +15,7 @@ import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.persistence.room.GnbpDatabase
+import io.github.ayaseminami.gnbp.persistence.result.RoomGeneratedResultRepository
 import io.github.ayaseminami.gnbp.persistence.task.RoomGenerationTaskRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
@@ -150,6 +151,33 @@ class GenerationEngineTest {
                 tasks.size == 3 && tasks.all { it.status is TaskStatus.Succeeded }
             }
             assertEquals(3, completed.size)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `successful generation commits task and generated result through one completion seam`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val completions = RecordingCompletionRepository(repository)
+        val provider = SequenceProvider(
+            listOf(ImageGenerationResult.Success(GeneratedImage(byteArrayOf(1, 2, 3), "image/png"))),
+        )
+        val journal = RecordingResultJournal()
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("completed-task"),
+            resultJournal = journal,
+            completionRepository = completions,
+        )
+        try {
+            val taskId = (engine.enqueue(batchRequest()) as EnqueueResult.Accepted).taskIds.single()
+            engine.observeTasks().first { tasks -> tasks.singleOrNull()?.status is TaskStatus.Succeeded }
+
+            assertEquals(listOf(taskId), completions.committedTaskIds)
+            assertEquals(listOf(taskId), journal.deletedTaskIds)
         } finally {
             engine.close()
         }
@@ -361,6 +389,58 @@ class GenerationEngineTest {
             assertEquals(listOf(taskId), journal.deletedTaskIds)
         } finally {
             engine.close()
+        }
+    }
+
+    @Test
+    fun `startup recovery commits a generated result to Room without another provider request`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val taskId = TaskId("room-recovered-task")
+        val taskRepository = RoomGenerationTaskRepository(database.taskDao())
+        val resultRepository = RoomGeneratedResultRepository(database.generatedResultDao())
+        taskRepository.insertTasks(
+            listOf(
+                GenerationTask(
+                    id = taskId,
+                    request = taskRequestSnapshot(),
+                    status = TaskStatus.Running,
+                    createdAtEpochMillis = 100L,
+                    startedAtEpochMillis = 200L,
+                ),
+            ),
+        )
+        val asset = AssetRef(
+            id = MediaAssetId("room-recovered-asset"),
+            uri = Uri.parse("content://gnbp/room-recovered-asset"),
+            displayName = "room-recovered.png",
+            mimeType = "image/png",
+            byteSize = 3,
+        )
+        val provider = SequenceProvider(emptyList())
+        val engine = DefaultGenerationEngine(
+            taskRepository = taskRepository,
+            completionRepository = taskRepository,
+            providerFactory = GenerationProviderFactory { provider },
+            generatedAssetStore = RecordingAssetStore(),
+            referencePreparer = ReferencePreparer { error("No references expected") },
+            profileLoader = { geminiProfile() },
+            maxConcurrency = 1,
+            externalScope = backgroundScope,
+            resultJournal = RecordingResultJournal(ResultJournalRecovery.Saved(asset)),
+            workerDispatcher = UnconfinedTestDispatcher(testScheduler),
+        )
+        try {
+            engine.observeTasks().first { tasks -> tasks.singleOrNull()?.status is TaskStatus.Succeeded }
+            val result = resultRepository.loadResults().single()
+            assertEquals(taskId, result.sourceTaskId)
+            assertEquals(asset.uri.toString(), result.asset.location)
+            assertEquals(0, provider.callCount.get())
+        } finally {
+            engine.close()
+            database.close()
         }
     }
 
@@ -818,8 +898,11 @@ class GenerationEngineTest {
         now: () -> Long = { 1_000L },
         assetStore: GeneratedAssetStore = RecordingAssetStore(),
         resultJournal: GenerationResultJournal = NoOpGenerationResultJournal,
+        completionRepository: GenerationCompletionRepository =
+            GenerationCompletionRepository(repository::updateTask),
     ) = DefaultGenerationEngine(
         taskRepository = repository,
+        completionRepository = completionRepository,
         providerFactory = GenerationProviderFactory { provider },
         generatedAssetStore = assetStore,
         referencePreparer = ReferencePreparer { error("No references expected") },
@@ -1002,6 +1085,17 @@ private class InMemoryTaskRepository(
 
     override suspend fun updateTask(task: GenerationTask) {
         tasks.value = tasks.value.map { current -> if (current.id == task.id) task else current }
+    }
+}
+
+private class RecordingCompletionRepository(
+    private val tasks: InMemoryTaskRepository,
+) : GenerationCompletionRepository {
+    val committedTaskIds = mutableListOf<TaskId>()
+
+    override suspend fun commitSucceededTask(task: GenerationTask) {
+        tasks.updateTask(task)
+        committedTaskIds += task.id
     }
 }
 

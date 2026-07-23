@@ -25,6 +25,8 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkMode
@@ -98,6 +100,7 @@ class GenerationViewModel(
     private var promptEdited = false
     private val mutableUiState = MutableStateFlow(GenerationUiState())
     private val mutableTasks = MutableStateFlow<List<GenerationTask>>(emptyList())
+    private val mutableGeneratedResults = MutableStateFlow<List<GeneratedResult>>(emptyList())
     private val mutablePreviewEvents = MutableSharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>(
         extraBufferCapacity = 1,
     )
@@ -111,6 +114,7 @@ class GenerationViewModel(
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
     val tasks: StateFlow<List<GenerationTask>> = mutableTasks.asStateFlow()
+    val generatedResults: StateFlow<List<GeneratedResult>> = mutableGeneratedResults.asStateFlow()
     val settingsState: StateFlow<SettingsUiState> = settingsCoordinator.state
     val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
         mutablePreviewEvents.asSharedFlow()
@@ -148,6 +152,11 @@ class GenerationViewModel(
                 mutableUiState.update { current ->
                     current.copy(prompts = prompts).restorePersistedPromptIfNeeded()
                 }
+            }
+        }
+        viewModelScope.launch {
+            persistence.generatedResults.observeResults().collect { results ->
+                mutableGeneratedResults.value = results
             }
         }
         viewModelScope.launch {
@@ -411,6 +420,19 @@ class GenerationViewModel(
 
     fun resultUnavailable() {
         mutableUiState.update { it.copy(feedback = GenerationFeedback.ResultUnavailable) }
+    }
+
+    fun setGeneratedResultFavorite(id: GeneratedResultId, favorite: Boolean) {
+        viewModelScope.launch {
+            val updated = try {
+                persistence.generatedResults.setFavorite(id, favorite)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                false
+            }
+            if (!updated) resultUnavailable()
+        }
     }
 
     override fun onCleared() {

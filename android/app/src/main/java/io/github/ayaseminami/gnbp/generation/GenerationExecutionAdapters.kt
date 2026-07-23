@@ -38,6 +38,10 @@ interface GenerationTaskRepository {
     suspend fun updateTask(task: GenerationTask)
 }
 
+internal fun interface GenerationCompletionRepository {
+    suspend fun commitSucceededTask(task: GenerationTask)
+}
+
 internal interface ManagedGenerationEngine : GenerationEngine {
     suspend fun shutdownForInterruption()
 }

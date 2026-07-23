@@ -41,6 +41,7 @@ internal class GnbpAppGraph(
         cleanupReferences()
         return DefaultGenerationEngine(
             taskRepository = persistence.tasks,
+            completionRepository = persistence.generationCompletion,
             providerFactory = AndroidGenerationProviderFactory(application),
             generatedAssetStore = MediaStoreGeneratedAssetStore.create(application),
             referencePreparer = ReferencePreparer { asset ->

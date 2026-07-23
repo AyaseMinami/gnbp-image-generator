@@ -43,6 +43,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 internal class DefaultGenerationEngine(
     private val taskRepository: GenerationTaskRepository,
+    private val completionRepository: GenerationCompletionRepository =
+        GenerationCompletionRepository(taskRepository::updateTask),
     private val providerFactory: GenerationProviderFactory,
     private val generatedAssetStore: GeneratedAssetStore,
     private val referencePreparer: ReferencePreparer,
@@ -249,15 +251,13 @@ internal class DefaultGenerationEngine(
                     return@forEach
                 }
                 val recovered = recoverJournaledResult(taskId)
-                taskRepository.updateTask(
-                    task.copy(
-                        status = recovered ?: TaskStatus.OutcomeUnknown(
-                            TaskOutcomeUnknownReason.ProcessInterrupted,
-                        ),
-                        finishedAtEpochMillis = nowEpochMillis(),
+                val reconciled = task.copy(
+                    status = recovered ?: TaskStatus.OutcomeUnknown(
+                        TaskOutcomeUnknownReason.ProcessInterrupted,
                     ),
+                    finishedAtEpochMillis = nowEpochMillis(),
                 )
-                if (recovered is TaskStatus.Succeeded) resultJournal.delete(taskId)
+                persistReconciledTask(reconciled)
             }
             activeCancellations.clear()
             requestedCancellations.clear()
@@ -303,12 +303,7 @@ internal class DefaultGenerationEngine(
                             null
                         }
                     }
-                    reconciled?.let { updated ->
-                        taskRepository.updateTask(updated)
-                        if (updated.status is TaskStatus.Succeeded) {
-                            resultJournal.delete(updated.id)
-                        }
-                    }
+                    reconciled?.let { updated -> persistReconciledTask(updated) }
                 }
                 queued
             }
@@ -393,13 +388,24 @@ internal class DefaultGenerationEngine(
         stateMutex.withLock {
             val task = taskRepository.findTask(taskId) ?: return@withLock
             if (task.status == TaskStatus.Running) {
-                taskRepository.updateTask(
-                    task.copy(
-                        status = status,
-                        finishedAtEpochMillis = nowEpochMillis(),
-                    ),
+                val finished = task.copy(
+                    status = status,
+                    finishedAtEpochMillis = nowEpochMillis(),
                 )
-                if (status is TaskStatus.Succeeded) resultJournal.delete(taskId)
+                if (status is TaskStatus.Succeeded) {
+                    try {
+                        completionRepository.commitSucceededTask(finished)
+                        deleteJournalBestEffort(taskId)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        taskRepository.updateTask(
+                            finished.copy(status = TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)),
+                        )
+                    }
+                } else {
+                    taskRepository.updateTask(finished)
+                }
             }
             activeCancellations -= taskId
             requestedCancellations -= taskId
@@ -461,6 +467,25 @@ internal class DefaultGenerationEngine(
                 )
                 snapshots -= taskId
             }
+        }
+    }
+
+    private suspend fun persistReconciledTask(task: GenerationTask) {
+        if (task.status is TaskStatus.Succeeded) {
+            completionRepository.commitSucceededTask(task)
+            deleteJournalBestEffort(task.id)
+        } else {
+            taskRepository.updateTask(task)
+        }
+    }
+
+    private suspend fun deleteJournalBestEffort(taskId: TaskId) {
+        try {
+            resultJournal.delete(taskId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            Unit
         }
     }
 

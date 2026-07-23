@@ -15,6 +15,9 @@ import io.github.ayaseminami.gnbp.persistence.settings.DataStoreSettingsReposito
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsDataMigration
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
+import io.github.ayaseminami.gnbp.generation.GenerationCompletionRepository
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultRepository
+import io.github.ayaseminami.gnbp.persistence.result.RoomGeneratedResultRepository
 import io.github.ayaseminami.gnbp.persistence.task.RoomGenerationTaskRepository
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +32,8 @@ class GnbpPersistence private constructor(
     val prompts: PromptRepository,
     val settings: SettingsRepository,
     val tasks: GenerationTaskRepository,
+    internal val generationCompletion: GenerationCompletionRepository,
+    val generatedResults: GeneratedResultRepository,
 ) : Closeable {
     override fun close() {
         scope.cancel()
@@ -52,13 +57,16 @@ class GnbpPersistence private constructor(
                 migrations = listOf(SettingsDataMigration()),
                 produceFile = { applicationContext.preferencesDataStoreFile(SETTINGS_FILE_NAME) },
             )
+            val tasks = RoomGenerationTaskRepository(database.taskDao())
             return GnbpPersistence(
                 database = database,
                 scope = scope,
                 profiles = RoomProfileRepository(database.profileDao(), cipher),
                 prompts = RoomPromptRepository(database.promptDao()),
                 settings = DataStoreSettingsRepository(dataStore),
-                tasks = RoomGenerationTaskRepository(database.taskDao()),
+                tasks = tasks,
+                generationCompletion = tasks,
+                generatedResults = RoomGeneratedResultRepository(database.generatedResultDao()),
             )
         }
 
