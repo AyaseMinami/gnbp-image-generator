@@ -36,6 +36,10 @@
     <string name="gallery_empty">Completed images will appear here</string>
     <string name="gallery_thumbnail">Generated result thumbnail</string>
     <string name="gallery_thumbnail_unavailable">Thumbnail unavailable</string>
+    <string name="gallery_favorites_only">Favorites only</string>
+    <string name="gallery_favorites_empty">No favorite results yet</string>
+    <string name="favorite_result">Favorite result</string>
+    <string name="unfavorite_result">Remove from favorites</string>
     <string name="share_result">Share result</string>
     <string name="share_chooser_title">Share generated result</string>
     <string name="reuse_as_reference">Reuse as reference image</string>

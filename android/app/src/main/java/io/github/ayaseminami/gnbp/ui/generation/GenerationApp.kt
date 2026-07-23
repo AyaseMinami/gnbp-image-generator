@@ -75,6 +75,8 @@ import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.theme.GnbpTheme
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
@@ -102,6 +104,7 @@ fun GenerationApp(
     settingsState: SettingsUiState,
     settingsActions: SettingsActions,
     tasks: List<GenerationTask>,
+    generatedResults: List<GeneratedResult>,
     references: List<DurableReferenceAsset>,
     failedReferenceCount: Int,
     onSelectProfile: (ProfileId) -> Unit,
@@ -121,6 +124,7 @@ fun GenerationApp(
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
+    onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onFeedbackShown: () -> Unit,
     onSettingsFeedbackShown: () -> Unit,
 ) {
@@ -198,13 +202,14 @@ fun GenerationApp(
                         onOpenResult = onOpenResult,
                     )
                     AppSection.Gallery -> GalleryScreen(
-                        tasks = tasks,
+                        results = generatedResults,
                         onOpenResult = onOpenResult,
                         onShareResult = onShareResult,
                         onReuseResult = { asset ->
                             onReuseResult(asset)
                             selectedSectionName = AppSection.Generate.name
                         },
+                        onSetFavorite = onSetResultFavorite,
                     )
                     AppSection.Settings -> SettingsScreen(
                         state = settingsState,

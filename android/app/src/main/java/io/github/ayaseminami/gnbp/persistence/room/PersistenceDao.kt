@@ -76,6 +76,39 @@ internal interface GenerationTaskDao {
 
     @Upsert
     suspend fun upsert(task: GenerationTaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertResultIfAbsent(result: GeneratedResultEntity): Long
+
+    @Query("SELECT * FROM generated_results WHERE source_task_id = :sourceTaskId")
+    suspend fun findResultBySourceTaskId(sourceTaskId: String): GeneratedResultEntity?
+
+    @Transaction
+    suspend fun commitSucceededTask(
+        task: GenerationTaskEntity,
+        result: GeneratedResultEntity,
+    ): GeneratedResultEntity {
+        upsert(task)
+        insertResultIfAbsent(result)
+        return requireNotNull(findResultBySourceTaskId(task.id)) {
+            "A generated-result ID collision prevented the successful task commit"
+        }
+    }
+}
+
+@Dao
+internal interface GeneratedResultDao {
+    @Query("SELECT * FROM generated_results ORDER BY created_at DESC, id DESC")
+    fun observeAll(): Flow<List<GeneratedResultEntity>>
+
+    @Query("SELECT * FROM generated_results ORDER BY created_at DESC, id DESC")
+    suspend fun findAll(): List<GeneratedResultEntity>
+
+    @Query("SELECT * FROM generated_results WHERE id = :id")
+    suspend fun findById(id: String): GeneratedResultEntity?
+
+    @Query("UPDATE generated_results SET is_favorite = :favorite WHERE id = :id")
+    suspend fun updateFavorite(id: String, favorite: Boolean): Int
 }
 
 internal sealed interface DirectReplacementEntityCommit {

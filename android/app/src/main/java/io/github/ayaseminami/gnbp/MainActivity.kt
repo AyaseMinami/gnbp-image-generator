@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
             val draftState by referenceDraft.state.collectAsState()
             val generationState by generation.uiState.collectAsState()
             val tasks by generation.tasks.collectAsState()
+            val generatedResults by generation.generatedResults.collectAsState()
             val settingsState by generation.settingsState.collectAsState()
             val settingsActions = remember {
                 SettingsActions(
@@ -111,6 +112,7 @@ class MainActivity : ComponentActivity() {
                 settingsState = settingsState,
                 settingsActions = settingsActions,
                 tasks = tasks,
+                generatedResults = generatedResults,
                 references = draftState.assets,
                 failedReferenceCount = draftState.failedImportCount,
                 onSelectProfile = generation::selectProfile,
@@ -130,6 +132,7 @@ class MainActivity : ComponentActivity() {
                 onOpenResult = ::openResult,
                 onShareResult = ::shareResult,
                 onReuseResult = ::reuseResult,
+                onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onFeedbackShown = generation::clearFeedback,
                 onSettingsFeedbackShown = generation::clearSettingsFeedback,
             )

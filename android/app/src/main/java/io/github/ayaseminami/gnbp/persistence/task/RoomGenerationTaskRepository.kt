@@ -2,34 +2,25 @@ package io.github.ayaseminami.gnbp.persistence.task
 
 import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
-import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
+import io.github.ayaseminami.gnbp.generation.GenerationCompletionRepository
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
-import io.github.ayaseminami.gnbp.generation.ReferenceAssetSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
 import io.github.ayaseminami.gnbp.generation.TaskFailureReason
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
-import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.persistence.room.DirectReplacementEntityCommit
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskDao
 import io.github.ayaseminami.gnbp.persistence.room.GenerationTaskEntity
-import io.github.ayaseminami.gnbp.provider.GenerationParameters
-import io.github.ayaseminami.gnbp.provider.transport.ProfileId
+import io.github.ayaseminami.gnbp.persistence.room.GeneratedResultEntity
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 class RoomGenerationTaskRepository internal constructor(
     private val taskDao: GenerationTaskDao,
-) : GenerationTaskRepository {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
+) : GenerationTaskRepository, GenerationCompletionRepository {
 
     override fun observeTasks(): Flow<List<GenerationTask>> = taskDao.observeAll().map { tasks ->
         tasks.mapNotNull(::decodeOrNull)
@@ -63,6 +54,27 @@ class RoomGenerationTaskRepository internal constructor(
         taskDao.upsert(task.toEntity())
     }
 
+    override suspend fun commitSucceededTask(task: GenerationTask) {
+        val entity = task.toEntity()
+        val asset = requireNotNull((task.status as? TaskStatus.Succeeded)?.asset) {
+            "Only a successful task can create a generated result"
+        }
+        taskDao.commitSucceededTask(
+            task = entity,
+            result = GeneratedResultEntity(
+                id = GeneratedResultId.forTask(task.id).value,
+                sourceTaskId = task.id.value,
+                requestJson = entity.requestJson,
+                createdAt = task.finishedAtEpochMillis ?: task.createdAtEpochMillis,
+                assetId = asset.id,
+                assetUri = asset.location,
+                assetDisplayName = asset.displayName,
+                assetMimeType = asset.mimeType,
+                assetByteSize = asset.byteSize,
+            ),
+        )
+    }
+
     private fun decodeOrNull(entity: GenerationTaskEntity): GenerationTask? =
         runCatching { entity.toTask() }.getOrNull()
 
@@ -76,7 +88,7 @@ class RoomGenerationTaskRepository internal constructor(
         val asset = (status as? TaskStatus.Succeeded)?.asset
         return GenerationTaskEntity(
             id = id.value,
-            requestJson = json.encodeToString(request.toPersisted()),
+            requestJson = TaskRequestJsonCodec.encode(request),
             status = status.persistedName(),
             createdAt = createdAtEpochMillis,
             startedAt = startedAtEpochMillis,
@@ -92,7 +104,7 @@ class RoomGenerationTaskRepository internal constructor(
     }
 
     private fun GenerationTaskEntity.toTask(): GenerationTask {
-        val request = json.decodeFromString<PersistedTaskRequest>(requestJson).toDomain()
+        val request = TaskRequestJsonCodec.decode(requestJson)
         val taskStatus = when (status) {
             "QUEUED" -> TaskStatus.Queued
             "RUNNING" -> TaskStatus.Running
@@ -127,91 +139,6 @@ class RoomGenerationTaskRepository internal constructor(
         )
     }
 }
-
-@Serializable
-private data class PersistedTaskRequest(
-    val profileId: String,
-    val profileName: String,
-    val providerKind: String,
-    val model: String,
-    val prompt: String,
-    val parameters: PersistedGenerationParameters,
-    val references: List<PersistedReferenceAsset>,
-) {
-    fun toDomain(): TaskRequestSnapshot = TaskRequestSnapshot(
-        profileId = ProfileId(profileId),
-        profileName = profileName,
-        providerKind = GenerationProviderKind.valueOf(providerKind),
-        model = model,
-        prompt = prompt,
-        parameters = parameters.toDomain(),
-        references = references.map(PersistedReferenceAsset::toDomain),
-    )
-}
-
-@Serializable
-private data class PersistedGenerationParameters(
-    val kind: String,
-    val aspectRatio: String? = null,
-    val imageSize: String? = null,
-    val temperature: Double? = null,
-    val size: String? = null,
-    val quality: String? = null,
-) {
-    fun toDomain(): GenerationParameters = when (kind) {
-        "GEMINI" -> GenerationParameters.Gemini(
-            aspectRatio = requireNotNull(aspectRatio),
-            imageSize = requireNotNull(imageSize),
-            temperature = requireNotNull(temperature),
-        )
-        "OPENAI" -> GenerationParameters.OpenAi(
-            size = requireNotNull(size),
-            quality = requireNotNull(quality),
-        )
-        else -> error("Unknown persisted generation parameters")
-    }
-}
-
-@Serializable
-private data class PersistedReferenceAsset(
-    val id: String,
-    val displayName: String,
-    val mimeType: String,
-) {
-    fun toDomain(): ReferenceAssetSnapshot = ReferenceAssetSnapshot(
-        id = id,
-        displayName = displayName,
-        mimeType = mimeType,
-    )
-}
-
-private fun TaskRequestSnapshot.toPersisted() = PersistedTaskRequest(
-    profileId = profileId.value,
-    profileName = profileName,
-    providerKind = providerKind.name,
-    model = model,
-    prompt = prompt,
-    parameters = when (val value = parameters) {
-        is GenerationParameters.Gemini -> PersistedGenerationParameters(
-            kind = "GEMINI",
-            aspectRatio = value.aspectRatio,
-            imageSize = value.imageSize,
-            temperature = value.temperature,
-        )
-        is GenerationParameters.OpenAi -> PersistedGenerationParameters(
-            kind = "OPENAI",
-            size = value.size,
-            quality = value.quality,
-        )
-    },
-    references = references.map { reference ->
-        PersistedReferenceAsset(
-            id = reference.id,
-            displayName = reference.displayName,
-            mimeType = reference.mimeType,
-        )
-    },
-)
 
 private fun TaskStatus.persistedName(): String = when (this) {
     TaskStatus.Queued -> "QUEUED"

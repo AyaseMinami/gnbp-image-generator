@@ -17,15 +17,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -36,22 +43,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
-import io.github.ayaseminami.gnbp.generation.GenerationTask
-import io.github.ayaseminami.gnbp.generation.TaskStatus
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 fun GalleryScreen(
-    tasks: List<GenerationTask>,
+    results: List<GeneratedResult>,
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
+    onSetFavorite: (GeneratedResultId, Boolean) -> Unit,
 ) {
-    val entries = tasks.mapNotNull { task ->
-        (task.status as? TaskStatus.Succeeded)?.let { status -> task to status.asset }
-    }.sortedByDescending { (task, _) -> task.finishedAtEpochMillis ?: task.createdAtEpochMillis }
-    if (entries.isEmpty()) {
+    if (results.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 stringResource(R.string.gallery_empty),
@@ -60,48 +65,74 @@ fun GalleryScreen(
         }
         return
     }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 156.dp),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        items(entries, key = { (task, _) -> task.id.value }) { (task, asset) ->
-            GalleryItem(
-                task = task,
-                asset = asset,
-                onOpen = { onOpenResult(asset) },
-                onShare = { onShareResult(asset) },
-                onReuse = { onReuseResult(asset) },
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    val visibleResults = if (favoritesOnly) results.filter(GeneratedResult::isFavorite) else results
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            FilterChip(
+                selected = favoritesOnly,
+                onClick = { favoritesOnly = !favoritesOnly },
+                label = { Text(stringResource(R.string.gallery_favorites_only)) },
+                leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
             )
+        }
+        if (visibleResults.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.gallery_favorites_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 156.dp),
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(visibleResults, key = { result -> result.id.value }) { result ->
+                    GalleryItem(
+                        result = result,
+                        onOpen = { onOpenResult(result.asset) },
+                        onShare = { onShareResult(result.asset) },
+                        onReuse = { onReuseResult(result.asset) },
+                        onSetFavorite = { favorite -> onSetFavorite(result.id, favorite) },
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun GalleryItem(
-    task: GenerationTask,
-    asset: GeneratedAssetReference,
+    result: GeneratedResult,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onReuse: () -> Unit,
+    onSetFavorite: (Boolean) -> Unit,
 ) {
     Card(shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
         Column {
-            GeneratedThumbnail(asset)
+            GeneratedThumbnail(result.asset)
             Column(
                 modifier = Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    task.request.prompt,
+                    result.request.prompt,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    rememberTimestamp(task.finishedAtEpochMillis ?: task.createdAtEpochMillis),
+                    rememberTimestamp(result.createdAtEpochMillis),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -109,6 +140,14 @@ private fun GalleryItem(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    IconButton(onClick = { onSetFavorite(!result.isFavorite) }) {
+                        Icon(
+                            if (result.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = stringResource(
+                                if (result.isFavorite) R.string.unfavorite_result else R.string.favorite_result,
+                            ),
+                        )
+                    }
                     IconButton(onClick = onReuse) {
                         Icon(
                             Icons.Default.AddPhotoAlternate,

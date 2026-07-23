@@ -8,9 +8,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -23,6 +25,7 @@ import io.github.ayaseminami.gnbp.generation.DefaultGenerationEngine
 import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.EnqueueResult
 import io.github.ayaseminami.gnbp.generation.GenerationBatchRequest
+import io.github.ayaseminami.gnbp.generation.GenerationCompletionRepository
 import io.github.ayaseminami.gnbp.generation.GenerationProviderFactory
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
@@ -52,6 +55,9 @@ import io.github.ayaseminami.gnbp.ui.settings.ProfileEditorState
 import io.github.ayaseminami.gnbp.ui.settings.ProfileTextField
 import io.github.ayaseminami.gnbp.ui.settings.SETTINGS_ADD_PROFILE_TEST_TAG
 import io.github.ayaseminami.gnbp.ui.settings.SETTINGS_SAVE_PROFILE_TEST_TAG
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
+import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -95,11 +101,25 @@ class GenerationAppInstrumentationTest {
         val submitInvoked = AtomicReference(false)
         val shareInvoked = AtomicBoolean(false)
         val reuseInvoked = AtomicBoolean(false)
+        val generatedResults = MutableStateFlow<List<GeneratedResult>>(emptyList())
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also {
             workflowScope = it
         }
         val createdEngine = DefaultGenerationEngine(
             taskRepository = repository,
+            completionRepository = GenerationCompletionRepository { task ->
+                repository.updateTask(task)
+                val asset = (task.status as TaskStatus.Succeeded).asset
+                generatedResults.value = listOf(
+                    GeneratedResult(
+                        id = GeneratedResultId.forTask(task.id),
+                        sourceTaskId = task.id,
+                        request = task.request,
+                        asset = asset,
+                        createdAtEpochMillis = task.finishedAtEpochMillis ?: task.createdAtEpochMillis,
+                    ),
+                )
+            },
             providerFactory = GenerationProviderFactory {
                 OfflineFakeImageGenerationProvider(fakeImage)
             },
@@ -131,6 +151,7 @@ class GenerationAppInstrumentationTest {
 
         compose.setContent {
             val tasks by createdEngine.observeTasks().collectAsState(initial = emptyList())
+            val results by generatedResults.collectAsState()
             var state by remember {
                 mutableStateOf(
                     GenerationUiState(
@@ -154,6 +175,7 @@ class GenerationAppInstrumentationTest {
                 settingsState = SettingsUiState(),
                 settingsActions = noOpSettingsActions(),
                 tasks = tasks,
+                generatedResults = results,
                 references = emptyList(),
                 failedReferenceCount = 0,
                 onSelectProfile = { state = state.copy(selectedProfileId = it) },
@@ -173,6 +195,7 @@ class GenerationAppInstrumentationTest {
                 onOpenResult = {},
                 onShareResult = { shareInvoked.set(true) },
                 onReuseResult = { reuseInvoked.set(true) },
+                onSetResultFavorite = { _, _ -> },
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
             )
@@ -204,6 +227,61 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithContentDescription(context.getString(R.string.reuse_as_reference)).performClick()
         compose.waitUntil(timeoutMillis = 2_000) { reuseInvoked.get() }
         compose.onNodeWithText(context.getString(R.string.prompt_label)).assertExists()
+    }
+
+    @Test
+    fun galleryReadsGeneratedResultsAndFiltersFavoritesWithoutTaskHistory() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        compose.setContent {
+            var results by remember {
+                mutableStateOf(
+                    listOf(
+                        generatedResult("favorite", "favorite prompt", favorite = true),
+                        generatedResult("ordinary", "ordinary prompt", favorite = false),
+                    ),
+                )
+            }
+            GalleryScreen(
+                results = results,
+                onOpenResult = {},
+                onShareResult = {},
+                onReuseResult = {},
+                onSetFavorite = { id, favorite ->
+                    results = results.map { result ->
+                        if (result.id == id) result.copy(isFavorite = favorite) else result
+                    }
+                },
+            )
+        }
+
+        compose.onNodeWithText("favorite prompt").assertIsDisplayed()
+        compose.onNodeWithText("ordinary prompt").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.gallery_favorites_only)).performClick()
+        compose.onNodeWithText("favorite prompt").assertIsDisplayed()
+        compose.onAllNodesWithText("ordinary prompt").assertCountEquals(0)
+        compose.onNodeWithContentDescription(context.getString(R.string.unfavorite_result)).performClick()
+        compose.onNodeWithText(context.getString(R.string.gallery_favorites_empty)).assertIsDisplayed()
+    }
+
+    @Test
+    fun galleryKeepsMissingExternalResultVisible() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        compose.setContent {
+            GalleryScreen(
+                results = listOf(
+                    generatedResult("missing", "recoverable prompt", favorite = false),
+                ),
+                onOpenResult = {},
+                onShareResult = {},
+                onReuseResult = {},
+                onSetFavorite = { _, _ -> },
+            )
+        }
+
+        compose.onNodeWithText("recoverable prompt").assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            context.getString(R.string.gallery_thumbnail_unavailable),
+        ).assertIsDisplayed()
     }
 
     @Test
@@ -243,6 +321,7 @@ class GenerationAppInstrumentationTest {
                 settingsState = settingsState,
                 settingsActions = actions,
                 tasks = emptyList(),
+                generatedResults = emptyList(),
                 references = emptyList(),
                 failedReferenceCount = 0,
                 onSelectProfile = {},
@@ -262,6 +341,7 @@ class GenerationAppInstrumentationTest {
                 onOpenResult = {},
                 onShareResult = {},
                 onReuseResult = {},
+                onSetResultFavorite = { _, _ -> },
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
             )
@@ -280,6 +360,36 @@ class GenerationAppInstrumentationTest {
         compose.waitUntil(timeoutMillis = 2_000) { saved.get() }
     }
 }
+
+private fun generatedResult(
+    suffix: String,
+    prompt: String,
+    favorite: Boolean,
+) = GeneratedResult(
+    id = GeneratedResultId("result-$suffix"),
+    sourceTaskId = TaskId("task-$suffix"),
+    request = taskRequestSnapshot(prompt),
+    asset = io.github.ayaseminami.gnbp.generation.GeneratedAssetReference(
+        id = "asset-$suffix",
+        location = "content://gnbp/$suffix",
+        displayName = "$suffix.png",
+        mimeType = "image/png",
+        byteSize = 3,
+    ),
+    createdAtEpochMillis = 100L,
+    isFavorite = favorite,
+)
+
+private fun taskRequestSnapshot(prompt: String) =
+    io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot(
+        profileId = ProfileId("profile-one"),
+        profileName = "Gemini",
+        providerKind = io.github.ayaseminami.gnbp.generation.GenerationProviderKind.Gemini,
+        model = "model",
+        prompt = prompt,
+        parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
+        references = emptyList(),
+    )
 
 private fun noOpSettingsActions(
     onNewProfile: () -> Unit = {},

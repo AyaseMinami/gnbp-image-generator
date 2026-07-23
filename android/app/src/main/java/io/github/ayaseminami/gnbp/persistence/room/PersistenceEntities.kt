@@ -78,3 +78,25 @@ internal data class GenerationTaskEntity(
             "timestamps=[REDACTED], sourceTaskId=[REDACTED], terminalReason=$terminalReason, " +
             "result=[REDACTED])"
 }
+
+@Entity(
+    tableName = "generated_results",
+    indices = [Index(value = ["source_task_id"], unique = true)],
+)
+internal data class GeneratedResultEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "source_task_id") val sourceTaskId: String,
+    @ColumnInfo(name = "request_json") val requestJson: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "asset_id") val assetId: String,
+    @ColumnInfo(name = "asset_uri") val assetUri: String,
+    @ColumnInfo(name = "asset_display_name") val assetDisplayName: String,
+    @ColumnInfo(name = "asset_mime_type") val assetMimeType: String,
+    @ColumnInfo(name = "asset_byte_size") val assetByteSize: Long,
+    @ColumnInfo(name = "is_favorite", defaultValue = "0") val isFavorite: Boolean = false,
+) {
+    override fun toString(): String =
+        "GeneratedResultEntity(id=[REDACTED], sourceTaskId=[REDACTED], " +
+            "request=[REDACTED], asset=[REDACTED], createdAt=[REDACTED], " +
+            "isFavorite=$isFavorite)"
+}
