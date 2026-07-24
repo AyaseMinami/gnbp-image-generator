@@ -890,6 +890,226 @@ class GenerationEngineTest {
         }
     }
 
+    @Test
+    fun `bulk deletion removes safe terminal tasks and preserves active and unknown tasks`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val journal = RecordingResultJournal()
+        val engine = engine(
+            repository = repository,
+            provider = ControlledProvider(),
+            maxConcurrency = 1,
+            ids = listOf("unused"),
+            resultJournal = journal,
+        )
+        try {
+            assertEquals(CancelResult.NotFound, engine.cancel(TaskId("ready")))
+            val tasks = listOf(
+                persistedTask("succeeded", TaskStatus.Succeeded(generatedAsset("succeeded"))),
+                persistedTask("failed", TaskStatus.Failed(TaskFailureReason.Transport)),
+                persistedTask(
+                    "cancelled",
+                    TaskStatus.Cancelled(TaskCancellationReason.UserRequested),
+                ),
+                persistedTask("queued", TaskStatus.Queued),
+                persistedTask("running", TaskStatus.Running),
+                persistedTask(
+                    "unknown",
+                    TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProviderResponseUnknown),
+                ),
+            )
+            repository.insertTasks(tasks)
+
+            val report = engine.deleteTasks(tasks.mapTo(mutableSetOf(), GenerationTask::id))
+
+            assertEquals(
+                setOf(TaskId("succeeded"), TaskId("failed"), TaskId("cancelled")),
+                report.deletedTaskIds,
+            )
+            assertEquals(TaskDeletionBlockReason.Active, report.blockedTaskIds[TaskId("queued")])
+            assertEquals(TaskDeletionBlockReason.Active, report.blockedTaskIds[TaskId("running")])
+            assertEquals(
+                TaskDeletionBlockReason.OutcomeUnknown,
+                report.blockedTaskIds[TaskId("unknown")],
+            )
+            assertEquals(
+                setOf(TaskId("queued"), TaskId("running"), TaskId("unknown")),
+                repository.loadTasks().mapTo(mutableSetOf(), GenerationTask::id),
+            )
+            assertEquals(report.deletedTaskIds, journal.deletedTaskIds.toSet())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `direct replacement cannot be deleted while its retryable source remains`() = runTest {
+        val source = persistedTask(
+            "failed-source",
+            TaskStatus.Failed(TaskFailureReason.Transport),
+        )
+        val replacement = persistedTask(
+            "replacement",
+            TaskStatus.Cancelled(TaskCancellationReason.UserRequested),
+        ).copy(sourceTaskId = source.id)
+        val repository = InMemoryTaskRepository(listOf(source, replacement))
+        val engine = engine(
+            repository = repository,
+            provider = ControlledProvider(),
+            maxConcurrency = 1,
+            ids = listOf("second-replacement"),
+        )
+        try {
+            val report = engine.deleteTasks(setOf(replacement.id))
+
+            assertTrue(report.deletedTaskIds.isEmpty())
+            assertEquals(
+                TaskDeletionBlockReason.RetryLineage,
+                report.blockedTaskIds[replacement.id],
+            )
+            assertEquals(RetryResult.Enqueued(replacement.id), engine.retry(source.id))
+            assertEquals(2, repository.loadTasks().size)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `direct replacement can be deleted after its source succeeds`() = runTest {
+        val source = persistedTask(
+            "succeeded-source",
+            TaskStatus.Succeeded(generatedAsset("succeeded-source")),
+        )
+        val replacement = persistedTask(
+            "failed-replacement",
+            TaskStatus.Failed(TaskFailureReason.Transport),
+        ).copy(sourceTaskId = source.id)
+        val repository = InMemoryTaskRepository(listOf(source, replacement))
+        val engine = engine(
+            repository = repository,
+            provider = ControlledProvider(),
+            maxConcurrency = 1,
+            ids = listOf("unused"),
+        )
+        try {
+            val report = engine.deleteTasks(setOf(replacement.id))
+
+            assertEquals(setOf(replacement.id), report.deletedTaskIds)
+            assertTrue(report.blockedTaskIds.isEmpty())
+            assertEquals(listOf(source), repository.loadTasks())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `deleting an asset-save failure recovers paid bytes before removing task history`() = runTest {
+        val failed = persistedTask(
+            "recover-before-delete",
+            TaskStatus.Failed(TaskFailureReason.AssetSaveFailed),
+        )
+        val repository = InMemoryTaskRepository()
+        val journal = RecordingResultJournal(
+            ResultJournalRecovery.Staged(
+                image = GeneratedImage(byteArrayOf(4, 5, 6), "image/png"),
+                metadata = GeneratedAssetMetadata("Gemini", "model"),
+            ),
+        )
+        val assetStore = RecordingAssetStore()
+        val completion = RecordingCompletionRepository(repository)
+        val provider = ControlledProvider()
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("unused"),
+            assetStore = assetStore,
+            resultJournal = journal,
+            completionRepository = completion,
+        )
+        try {
+            assertEquals(CancelResult.NotFound, engine.cancel(TaskId("ready")))
+            repository.insertTasks(listOf(failed))
+
+            val report = engine.deleteTasks(setOf(failed.id))
+
+            assertEquals(setOf(failed.id), report.deletedTaskIds)
+            assertTrue(report.blockedTaskIds.isEmpty())
+            assertEquals(listOf(failed.id), completion.committedTaskIds)
+            assertEquals(1, assetStore.savedMetadata.size)
+            assertTrue(provider.started.tryReceive().isFailure)
+            assertTrue(repository.loadTasks().isEmpty())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `unrecoverable paid bytes keep an asset-save failure in task history`() = runTest {
+        val failed = persistedTask(
+            "pending-local-recovery",
+            TaskStatus.Failed(TaskFailureReason.AssetSaveFailed),
+        )
+        val repository = InMemoryTaskRepository()
+        val journal = RecordingResultJournal(
+            ResultJournalRecovery.Staged(
+                image = GeneratedImage(byteArrayOf(4, 5, 6), "image/png"),
+                metadata = GeneratedAssetMetadata("Gemini", "model"),
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            provider = ControlledProvider(),
+            maxConcurrency = 1,
+            ids = listOf("unused"),
+            assetStore = ThrowingAssetStore(),
+            resultJournal = journal,
+        )
+        try {
+            assertEquals(CancelResult.NotFound, engine.cancel(TaskId("ready")))
+            repository.insertTasks(listOf(failed))
+
+            val report = engine.deleteTasks(setOf(failed.id))
+
+            assertTrue(report.deletedTaskIds.isEmpty())
+            assertEquals(
+                TaskDeletionBlockReason.ResultReconciliationPending,
+                report.blockedTaskIds[failed.id],
+            )
+            assertEquals(failed, repository.findTask(failed.id))
+            assertTrue(journal.deletedTaskIds.isEmpty())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `private cleanup failure keeps terminal task history`() = runTest {
+        val failed = persistedTask("cleanup-failure", TaskStatus.Failed(TaskFailureReason.Transport))
+        val repository = InMemoryTaskRepository()
+        val engine = engine(
+            repository = repository,
+            provider = ControlledProvider(),
+            maxConcurrency = 1,
+            ids = listOf("unused"),
+            resultJournal = FailingDeletionJournal(),
+        )
+        try {
+            assertEquals(CancelResult.NotFound, engine.cancel(TaskId("ready")))
+            repository.insertTasks(listOf(failed))
+
+            val report = engine.deleteTasks(setOf(failed.id))
+
+            assertTrue(report.deletedTaskIds.isEmpty())
+            assertEquals(
+                TaskDeletionBlockReason.LocalCleanupFailed,
+                report.blockedTaskIds[failed.id],
+            )
+            assertEquals(failed, repository.findTask(failed.id))
+        } finally {
+            engine.close()
+        }
+    }
+
     private fun TestScope.engine(
         repository: InMemoryTaskRepository,
         provider: ImageGenerationProvider,
@@ -940,6 +1160,22 @@ private class RecordingResultJournal(
     override suspend fun delete(taskId: TaskId) {
         deletedTaskIds += taskId
         recovery = ResultJournalRecovery.None
+    }
+}
+
+private class FailingDeletionJournal : GenerationResultJournal {
+    override suspend fun stage(
+        taskId: TaskId,
+        image: GeneratedImage,
+        metadata: GeneratedAssetMetadata,
+    ): Boolean = true
+
+    override suspend fun recordSaved(taskId: TaskId, asset: AssetRef): Boolean = true
+
+    override suspend fun load(taskId: TaskId): ResultJournalRecovery = ResultJournalRecovery.None
+
+    override suspend fun delete(taskId: TaskId) {
+        error("simulated private cleanup failure")
     }
 }
 
@@ -1086,6 +1322,25 @@ private class InMemoryTaskRepository(
     override suspend fun updateTask(task: GenerationTask) {
         tasks.value = tasks.value.map { current -> if (current.id == task.id) task else current }
     }
+
+    override suspend fun deleteTerminalTasks(taskIds: Set<TaskId>): Set<TaskId> {
+        val deletable = tasks.value
+            .filter { task ->
+                task.id in taskIds && when (task.status) {
+                    is TaskStatus.Succeeded,
+                    is TaskStatus.Failed,
+                    is TaskStatus.Cancelled,
+                    -> true
+                    TaskStatus.Queued,
+                    TaskStatus.Running,
+                    is TaskStatus.OutcomeUnknown,
+                    -> false
+                }
+            }
+            .mapTo(mutableSetOf(), GenerationTask::id)
+        tasks.value = tasks.value.filterNot { task -> task.id in deletable }
+        return deletable
+    }
 }
 
 private class RecordingCompletionRepository(
@@ -1136,4 +1391,20 @@ private fun taskRequestSnapshot() = TaskRequestSnapshot(
     prompt = "draw a lighthouse",
     parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
     references = emptyList(),
+)
+
+private fun persistedTask(id: String, status: TaskStatus) = GenerationTask(
+    id = TaskId(id),
+    request = taskRequestSnapshot(),
+    status = status,
+    createdAtEpochMillis = 100L,
+    finishedAtEpochMillis = if (status == TaskStatus.Queued || status == TaskStatus.Running) null else 200L,
+)
+
+private fun generatedAsset(id: String) = GeneratedAssetReference(
+    id = "asset-$id",
+    location = "content://gnbp/$id",
+    displayName = "$id.png",
+    mimeType = "image/png",
+    byteSize = 3,
 )

@@ -77,6 +77,50 @@ internal interface GenerationTaskDao {
     @Upsert
     suspend fun upsert(task: GenerationTaskEntity)
 
+    @Query(
+        "SELECT * FROM generation_tasks WHERE id IN (:ids) " +
+            "AND status IN ('SUCCEEDED', 'FAILED', 'CANCELLED')",
+    )
+    suspend fun findDeletableByIds(ids: List<String>): List<GenerationTaskEntity>
+
+    @Query(
+        "DELETE FROM generation_tasks WHERE id IN (:ids) " +
+            "AND status IN ('SUCCEEDED', 'FAILED', 'CANCELLED')",
+    )
+    suspend fun deleteDeletableByIds(ids: List<String>): Int
+
+    @Query("SELECT * FROM generation_tasks WHERE id IN (:ids)")
+    suspend fun findTasksByIds(ids: List<String>): List<GenerationTaskEntity>
+
+    @Transaction
+    suspend fun deleteTerminalTasks(ids: List<String>): List<GenerationTaskEntity> {
+        if (ids.isEmpty()) return emptyList()
+        val deletable = findDeletableByIds(ids)
+            .associateByTo(mutableMapOf(), GenerationTaskEntity::id)
+        val sourceIds = deletable.values.mapNotNull(GenerationTaskEntity::sourceTaskId).distinct()
+        val sourceTasks = if (sourceIds.isEmpty()) {
+            emptyMap()
+        } else {
+            findTasksByIds(sourceIds).associateBy(GenerationTaskEntity::id)
+        }
+        var lineageChanged: Boolean
+        do {
+            lineageChanged = false
+            deletable.values.toList().forEach { task ->
+                val sourceTaskId = task.sourceTaskId ?: return@forEach
+                val sourceTask = sourceTasks[sourceTaskId] ?: return@forEach
+                if (sourceTask.status.isRetryableStatus() && sourceTaskId !in deletable) {
+                    deletable.remove(task.id)
+                    lineageChanged = true
+                }
+            }
+        } while (lineageChanged)
+        if (deletable.isNotEmpty()) {
+            deleteDeletableByIds(deletable.keys.toList())
+        }
+        return deletable.values.toList()
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertResultIfAbsent(result: GeneratedResultEntity): Long
 
@@ -95,6 +139,9 @@ internal interface GenerationTaskDao {
         }
     }
 }
+
+private fun String.isRetryableStatus(): Boolean =
+    this == "FAILED" || this == "CANCELLED" || this == "OUTCOME_UNKNOWN"
 
 @Dao
 internal interface GeneratedResultDao {

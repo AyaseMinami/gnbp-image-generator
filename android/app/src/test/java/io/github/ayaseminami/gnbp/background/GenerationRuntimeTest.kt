@@ -8,6 +8,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.ManagedGenerationEngine
 import io.github.ayaseminami.gnbp.generation.RetryResult
 import io.github.ayaseminami.gnbp.generation.TaskId
+import io.github.ayaseminami.gnbp.generation.TaskDeletionReport
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
@@ -230,6 +231,8 @@ private class RecordingManagedEngine(
     override suspend fun cancel(id: TaskId): CancelResult = error("Not used")
 
     override suspend fun retry(id: TaskId): RetryResult = error("Not used")
+
+    override suspend fun deleteTasks(taskIds: Set<TaskId>): TaskDeletionReport = error("Not used")
 
     override suspend fun shutdownForInterruption() {
         shutdownStarted?.complete(Unit)

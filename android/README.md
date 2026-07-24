@@ -192,12 +192,21 @@ the blocking API 26/29/33/36 device matrix in CI run
 [`29681595718`](https://github.com/AyaseMinami/gnbp-image-generator/actions/runs/29681595718).
 The user formally released the milestone on 2026-07-19.
 
-## M9 Generated-Result Library
+## M9 Result Library And Task Management
 
 M9 Issue #10 moves Gallery onto an independent Room-backed generated-result
 collection. Successful tasks commit one durable result containing the MediaStore
 reference and request snapshot; result lifetime is independent of task history,
 and favorite state persists across process restarts.
+
+Issue #13 adds explicit task selection, select-all, clear-failed confirmation,
+bulk cancellation through the existing engine path, and deletion of reconciled
+terminal history. `Queued`, `Running`, and `OutcomeUnknown` tasks are retained;
+retry replacements cannot be deleted while their source remains. Task deletion
+never removes generated-result records or MediaStore images. App-private result
+journals are reconciled or removed before the task row, and released reference
+copies are deleted only when no draft, remaining task, or generated result owns
+them. This slice does not change the Room schema.
 
 ## Reliable Background Execution (M7)
 

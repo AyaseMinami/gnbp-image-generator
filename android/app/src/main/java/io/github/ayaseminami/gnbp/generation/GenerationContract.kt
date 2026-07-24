@@ -176,6 +176,25 @@ sealed interface RetryResult {
     data object SnapshotUnavailable : RetryResult
 }
 
+enum class TaskDeletionBlockReason {
+    NotFound,
+    Active,
+    OutcomeUnknown,
+    RetryLineage,
+    ResultReconciliationPending,
+    LocalCleanupFailed,
+}
+
+data class TaskDeletionReport(
+    val deletedTaskIds: Set<TaskId>,
+    val blockedTaskIds: Map<TaskId, TaskDeletionBlockReason>,
+    val releasedReferenceAssetIds: Set<String>,
+) {
+    override fun toString(): String =
+        "TaskDeletionReport(deletedTaskIds=[REDACTED], blockedTaskIds=[REDACTED], " +
+            "releasedReferenceAssetIds=[REDACTED])"
+}
+
 interface GenerationEngine : Closeable {
     suspend fun enqueue(request: GenerationBatchRequest): EnqueueResult
 
@@ -184,4 +203,6 @@ interface GenerationEngine : Closeable {
     suspend fun cancel(id: TaskId): CancelResult
 
     suspend fun retry(id: TaskId): RetryResult
+
+    suspend fun deleteTasks(taskIds: Set<TaskId>): TaskDeletionReport
 }

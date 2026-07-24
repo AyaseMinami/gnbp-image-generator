@@ -12,13 +12,14 @@ import io.github.ayaseminami.gnbp.media.ImagePreparationFailure
 import io.github.ayaseminami.gnbp.media.ImagePreparationResult
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.media.MediaStoreGeneratedAssetStore
+import io.github.ayaseminami.gnbp.media.ReferenceReleaseCleanupReport
+import io.github.ayaseminami.gnbp.media.TaskReferenceCleaner
 import io.github.ayaseminami.gnbp.persistence.GnbpPersistence
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 
 class GnbpApplication : Application() {
     internal val graph: GnbpAppGraph by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -34,11 +35,15 @@ internal class GnbpAppGraph(
     val persistence: GnbpPersistence = GnbpPersistence.create(application)
     val referenceStore: ContentUriReferenceStore = ContentUriReferenceStore.create(application)
     private val resultJournal = FileGenerationResultJournal.create(application)
+    private val taskReferenceCleaner = TaskReferenceCleaner(
+        persistence.tasks,
+        persistence.generatedResults,
+        referenceStore,
+    )
     val generationRuntime = GenerationRuntime(engineFactory = ::createEngine)
 
     private suspend fun createEngine(): DefaultGenerationEngine {
         val settings = persistence.settings.observeSettings().first()
-        cleanupReferences()
         return DefaultGenerationEngine(
             taskRepository = persistence.tasks,
             completionRepository = persistence.generationCompletion,
@@ -63,15 +68,19 @@ internal class GnbpAppGraph(
         )
     }
 
-    suspend fun cleanupReferences() {
-        val retainedAssetIds = persistence.tasks.loadTasks()
-            .flatMap { task -> task.request.references }
-            .map { reference -> MediaAssetId(reference.id) }
-            .toSet()
-        withContext(Dispatchers.IO) {
-            referenceStore.cleanupOrphanedCopies(retainedAssetIds, System.currentTimeMillis())
-        }
-    }
+    suspend fun cleanupReferences(retainedDraftAssetIds: Set<MediaAssetId>) =
+        taskReferenceCleaner.cleanupAgedOrphans(
+            nowEpochMillis = System.currentTimeMillis(),
+            retainedDraftAssetIds = retainedDraftAssetIds,
+        )
+
+    suspend fun cleanupReleasedReferences(
+        releasedAssetIds: Set<String>,
+        retainedDraftAssetIds: Set<MediaAssetId>,
+    ): ReferenceReleaseCleanupReport = taskReferenceCleaner.cleanupReleased(
+        releasedAssetIds,
+        retainedDraftAssetIds,
+    )
 }
 
 internal val Application.gnbpGraph: GnbpAppGraph

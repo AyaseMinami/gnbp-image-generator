@@ -33,6 +33,25 @@
     <string name="task_status_cancelled">Cancelled</string>
     <string name="task_status_unknown">Outcome unknown</string>
     <string name="tasks_empty">No tasks</string>
+    <string name="select_tasks">Select tasks</string>
+    <string name="exit_task_selection">Exit selection</string>
+    <string name="select_all_tasks">Select all visible tasks</string>
+    <string name="clear_task_selection">Clear selection</string>
+    <string name="delete_selected_tasks">Delete selected tasks</string>
+    <string name="cancel_selected_tasks">Cancel selected active tasks</string>
+    <string name="clear_failed_tasks">Clear failed</string>
+    <string name="confirm_delete_tasks_title">Delete selected tasks?</string>
+    <string name="confirm_delete_tasks_message">This will delete %1$d task-history entries. Active and outcome-unknown tasks are kept; generated results and MediaStore images are not deleted.</string>
+    <string name="confirm_clear_failed_title">Clear all failed tasks?</string>
+    <string name="confirm_clear_failed_message">This will try to delete %1$d failed tasks. Tasks whose paid result cannot yet be safely reconciled are kept.</string>
+    <string name="confirm_delete_tasks">Delete tasks</string>
+    <string name="deleting_tasks">Deleting</string>
+    <string name="task_deletion_feedback">Deleted %1$d; kept %2$d; reference cleanup failures %3$d</string>
+    <string name="task_deletion_failed">Tasks could not be deleted. Try again.</string>
+    <plurals name="selected_task_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
     <string name="gallery_empty">Completed images will appear here</string>
     <string name="gallery_thumbnail">Generated result thumbnail</string>
     <string name="gallery_thumbnail_unavailable">Thumbnail unavailable</string>

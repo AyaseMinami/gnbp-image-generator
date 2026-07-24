@@ -177,6 +177,114 @@ internal class DefaultGenerationEngine(
         }
     }
 
+    override suspend fun deleteTasks(taskIds: Set<TaskId>): TaskDeletionReport {
+        ready.await()
+        if (taskIds.isEmpty()) {
+            return TaskDeletionReport(emptySet(), emptyMap(), emptySet())
+        }
+        return stateMutex.withLock {
+            val tasksById = taskRepository.loadTasks()
+                .associateByTo(mutableMapOf(), GenerationTask::id)
+            val blocked = mutableMapOf<TaskId, TaskDeletionBlockReason>()
+            val candidates = mutableMapOf<TaskId, GenerationTask>()
+            taskIds.forEach { taskId ->
+                var task = tasksById[taskId]
+                if (
+                    task?.status == TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+                ) {
+                    when (val recovery = attemptJournalRecovery(taskId)) {
+                        JournalRecoveryAttempt.None -> Unit
+                        is JournalRecoveryAttempt.Recovered -> {
+                            val recovered = task.copy(
+                                status = recovery.status,
+                                finishedAtEpochMillis = nowEpochMillis(),
+                            )
+                            val persisted = try {
+                                persistReconciledTask(recovered)
+                                true
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Exception) {
+                                false
+                            }
+                            if (persisted) {
+                                tasksById[taskId] = recovered
+                                task = recovered
+                            } else {
+                                blocked[taskId] = TaskDeletionBlockReason.ResultReconciliationPending
+                            }
+                        }
+                        JournalRecoveryAttempt.Pending,
+                        JournalRecoveryAttempt.Unavailable,
+                        -> blocked[taskId] = TaskDeletionBlockReason.ResultReconciliationPending
+                    }
+                }
+                if (taskId in blocked) return@forEach
+                when (task?.status) {
+                    null -> blocked[taskId] = TaskDeletionBlockReason.NotFound
+                    TaskStatus.Queued,
+                    TaskStatus.Running,
+                    -> blocked[taskId] = TaskDeletionBlockReason.Active
+                    is TaskStatus.OutcomeUnknown ->
+                        blocked[taskId] = TaskDeletionBlockReason.OutcomeUnknown
+                    is TaskStatus.Succeeded,
+                    is TaskStatus.Failed,
+                    is TaskStatus.Cancelled,
+                    -> candidates[taskId] = task
+                }
+            }
+
+            fun blockBrokenRetryLineage() {
+                var lineageChanged: Boolean
+                do {
+                    lineageChanged = false
+                    candidates.values.toList().forEach { task ->
+                        val sourceTaskId = task.sourceTaskId ?: return@forEach
+                        val sourceTask = tasksById[sourceTaskId] ?: return@forEach
+                        if (sourceTask.status.isRetryable() && sourceTaskId !in candidates) {
+                            candidates.remove(task.id)
+                            blocked[task.id] = TaskDeletionBlockReason.RetryLineage
+                            lineageChanged = true
+                        }
+                    }
+                } while (lineageChanged)
+            }
+
+            blockBrokenRetryLineage()
+            candidates.keys.toList().forEach { taskId ->
+                val cleaned = try {
+                    resultJournal.deleteForTaskRemoval(taskId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    false
+                }
+                if (!cleaned) {
+                    candidates.remove(taskId)
+                    blocked[taskId] = TaskDeletionBlockReason.LocalCleanupFailed
+                }
+            }
+            blockBrokenRetryLineage()
+            val deleted = taskRepository.deleteTerminalTasks(candidates.keys)
+            val refused = candidates.keys - deleted
+            refused.forEach { taskId -> blocked[taskId] = TaskDeletionBlockReason.NotFound }
+            deleted.forEach { taskId ->
+                snapshots.remove(taskId)
+                retryAttempts.remove(taskId)
+            }
+            TaskDeletionReport(
+                deletedTaskIds = deleted.toSet(),
+                blockedTaskIds = blocked.toMap(),
+                releasedReferenceAssetIds = deleted
+                    .asSequence()
+                    .mapNotNull(tasksById::get)
+                    .flatMap { task -> task.request.references.asSequence() }
+                    .map(ReferenceAssetSnapshot::id)
+                    .toSet(),
+            )
+        }
+    }
+
     private suspend fun executeRetryAttempt(
         id: TaskId,
         sourceTask: GenerationTask,
@@ -436,27 +544,40 @@ internal class DefaultGenerationEngine(
         TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
     }
 
-    private suspend fun recoverJournaledResult(taskId: TaskId): TaskStatus? = try {
+    private suspend fun attemptJournalRecovery(taskId: TaskId): JournalRecoveryAttempt = try {
         when (val recovery = resultJournal.load(taskId)) {
-            ResultJournalRecovery.None -> null
+            ResultJournalRecovery.None -> JournalRecoveryAttempt.None
             is ResultJournalRecovery.Saved ->
-                TaskStatus.Succeeded(recovery.asset.toGenerationReference())
+                JournalRecoveryAttempt.Recovered(
+                    TaskStatus.Succeeded(recovery.asset.toGenerationReference()),
+                )
             is ResultJournalRecovery.Staged -> when (
                 val saved = generatedAssetStore.save(recovery.image, recovery.metadata)
             ) {
                 is AssetSaveResult.Saved -> if (resultJournal.recordSaved(taskId, saved.asset)) {
-                    TaskStatus.Succeeded(saved.asset.toGenerationReference())
+                    JournalRecoveryAttempt.Recovered(
+                        TaskStatus.Succeeded(saved.asset.toGenerationReference()),
+                    )
                 } else {
-                    TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+                    JournalRecoveryAttempt.Pending
                 }
-                is AssetSaveResult.Failed -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+                is AssetSaveResult.Failed -> JournalRecoveryAttempt.Pending
             }
         }
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
-        null
+        JournalRecoveryAttempt.Unavailable
     }
+
+    private suspend fun recoverJournaledResult(taskId: TaskId): TaskStatus? =
+        when (val recovery = attemptJournalRecovery(taskId)) {
+            JournalRecoveryAttempt.None,
+            JournalRecoveryAttempt.Unavailable,
+            -> null
+            JournalRecoveryAttempt.Pending -> TaskStatus.Failed(TaskFailureReason.AssetSaveFailed)
+            is JournalRecoveryAttempt.Recovered -> recovery.status
+        }
 
     private suspend fun failBeforeStart(taskId: TaskId, status: TaskStatus) {
         stateMutex.withLock {
@@ -636,6 +757,16 @@ private sealed interface ExecutionBuildResult {
     data object ProfileUnavailable : ExecutionBuildResult
 
     data class ReferenceUnavailable(val assetId: String) : ExecutionBuildResult
+}
+
+private sealed interface JournalRecoveryAttempt {
+    data object None : JournalRecoveryAttempt
+
+    data class Recovered(val status: TaskStatus.Succeeded) : JournalRecoveryAttempt
+
+    data object Pending : JournalRecoveryAttempt
+
+    data object Unavailable : JournalRecoveryAttempt
 }
 
 private sealed interface RetryAdmission {

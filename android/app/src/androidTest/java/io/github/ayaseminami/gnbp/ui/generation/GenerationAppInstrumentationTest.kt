@@ -72,6 +72,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -173,6 +174,7 @@ class GenerationAppInstrumentationTest {
             GenerationApp(
                 state = state,
                 settingsState = SettingsUiState(),
+                taskManagementState = TaskManagementState(),
                 settingsActions = noOpSettingsActions(),
                 tasks = tasks,
                 generatedResults = results,
@@ -190,7 +192,8 @@ class GenerationAppInstrumentationTest {
                 onPickReferences = {},
                 onRemoveReference = {},
                 onSubmit = { submitRequest(state.prompt) },
-                onCancelTask = {},
+                onCancelTasks = {},
+                onDeleteTasks = {},
                 onRetryTask = {},
                 onOpenResult = {},
                 onShareResult = { shareInvoked.set(true) },
@@ -198,6 +201,7 @@ class GenerationAppInstrumentationTest {
                 onSetResultFavorite = { _, _ -> },
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
+                onTaskManagementFeedbackShown = {},
             )
         }
 
@@ -285,6 +289,108 @@ class GenerationAppInstrumentationTest {
     }
 
     @Test
+    fun tasksSelectionSelectsVisibleTasksAndConfirmsBeforeDeleting() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val requestedDeletion = AtomicReference<Set<TaskId>>(emptySet())
+        val tasks = taskSelectionFixture()
+        compose.setContent {
+            TasksScreen(
+                tasks = tasks,
+                isDeleting = false,
+                onCancelTasks = {},
+                onDeleteTasks = requestedDeletion::set,
+                onRetryTask = {},
+                onOpenResult = {},
+            )
+        }
+
+        compose.onNodeWithTag(TASKS_SELECTION_MODE_TEST_TAG).performClick()
+        compose.onNodeWithTag(TASKS_SELECT_ALL_TEST_TAG).performClick()
+        compose.onNodeWithTag(TASKS_DELETE_SELECTED_TEST_TAG).performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_tasks_title))
+            .assertIsDisplayed()
+        assertTrue(requestedDeletion.get().isEmpty())
+
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_tasks)).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { requestedDeletion.get().isNotEmpty() }
+        assertEquals(tasks.mapTo(mutableSetOf(), GenerationTask::id), requestedDeletion.get())
+    }
+
+    @Test
+    fun clearFailedConfirmsAndDeletesOnlyFailedTasks() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val requestedDeletion = AtomicReference<Set<TaskId>>(emptySet())
+        compose.setContent {
+            TasksScreen(
+                tasks = taskSelectionFixture(),
+                isDeleting = false,
+                onCancelTasks = {},
+                onDeleteTasks = requestedDeletion::set,
+                onRetryTask = {},
+                onOpenResult = {},
+            )
+        }
+
+        compose.onNodeWithTag(TASKS_CLEAR_FAILED_TEST_TAG).performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm_clear_failed_title))
+            .assertIsDisplayed()
+        assertTrue(requestedDeletion.get().isEmpty())
+
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_tasks)).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { requestedDeletion.get().isNotEmpty() }
+        assertEquals(setOf(TaskId("failed")), requestedDeletion.get())
+    }
+
+    @Test
+    fun tasksSelectionCanDeleteOneIndividuallySelectedTask() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val requestedDeletion = AtomicReference<Set<TaskId>>(emptySet())
+        compose.setContent {
+            TasksScreen(
+                tasks = taskSelectionFixture(),
+                isDeleting = false,
+                onCancelTasks = {},
+                onDeleteTasks = requestedDeletion::set,
+                onRetryTask = {},
+                onOpenResult = {},
+            )
+        }
+
+        compose.onNodeWithTag(TASKS_SELECTION_MODE_TEST_TAG).performClick()
+        compose.onNodeWithTag("${TASK_SELECTION_TEST_TAG_PREFIX}failed").performClick()
+        compose.onNodeWithTag(TASKS_DELETE_SELECTED_TEST_TAG).performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_tasks)).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { requestedDeletion.get().isNotEmpty() }
+
+        assertEquals(setOf(TaskId("failed")), requestedDeletion.get())
+    }
+
+    @Test
+    fun cancellingSelectedTasksUsesOnlyActiveTaskIds() {
+        val requestedCancellation = AtomicReference<Set<TaskId>>(emptySet())
+        compose.setContent {
+            TasksScreen(
+                tasks = taskSelectionFixture(),
+                isDeleting = false,
+                onCancelTasks = requestedCancellation::set,
+                onDeleteTasks = {},
+                onRetryTask = {},
+                onOpenResult = {},
+            )
+        }
+
+        compose.onNodeWithTag(TASKS_SELECTION_MODE_TEST_TAG).performClick()
+        compose.onNodeWithTag(TASKS_SELECT_ALL_TEST_TAG).performClick()
+        compose.onNodeWithTag(TASKS_CANCEL_SELECTED_TEST_TAG).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { requestedCancellation.get().isNotEmpty() }
+
+        assertEquals(
+            setOf(TaskId("queued"), TaskId("running")),
+            requestedCancellation.get(),
+        )
+    }
+
+    @Test
     fun settingsProfileEditorSurvivesNavigationRestoreAndUsesRealFormActions() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val saved = AtomicBoolean(false)
@@ -319,6 +425,7 @@ class GenerationAppInstrumentationTest {
             GenerationApp(
                 state = GenerationUiState(isLoading = false),
                 settingsState = settingsState,
+                taskManagementState = TaskManagementState(),
                 settingsActions = actions,
                 tasks = emptyList(),
                 generatedResults = emptyList(),
@@ -336,7 +443,8 @@ class GenerationAppInstrumentationTest {
                 onPickReferences = {},
                 onRemoveReference = {},
                 onSubmit = {},
-                onCancelTask = {},
+                onCancelTasks = {},
+                onDeleteTasks = {},
                 onRetryTask = {},
                 onOpenResult = {},
                 onShareResult = {},
@@ -344,6 +452,7 @@ class GenerationAppInstrumentationTest {
                 onSetResultFavorite = { _, _ -> },
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
+                onTaskManagementFeedbackShown = {},
             )
         }
 
@@ -390,6 +499,27 @@ private fun taskRequestSnapshot(prompt: String) =
         parameters = GenerationParameters.Gemini("3:4", "2K", 0.7),
         references = emptyList(),
     )
+
+private fun taskSelectionFixture(): List<GenerationTask> = listOf(
+    uiTask("succeeded", TaskStatus.Succeeded(generatedResult("task", "prompt", false).asset)),
+    uiTask("failed", TaskStatus.Failed(io.github.ayaseminami.gnbp.generation.TaskFailureReason.Transport)),
+    uiTask("queued", TaskStatus.Queued),
+    uiTask("running", TaskStatus.Running),
+    uiTask(
+        "unknown",
+        TaskStatus.OutcomeUnknown(
+            io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason.ProviderResponseUnknown,
+        ),
+    ),
+)
+
+private fun uiTask(id: String, status: TaskStatus) = GenerationTask(
+    id = TaskId(id),
+    request = taskRequestSnapshot("prompt-$id"),
+    status = status,
+    createdAtEpochMillis = 100L,
+    finishedAtEpochMillis = if (status == TaskStatus.Queued || status == TaskStatus.Running) null else 200L,
+)
 
 private fun noOpSettingsActions(
     onNewProfile: () -> Unit = {},
@@ -449,6 +579,25 @@ private class InstrumentedTaskRepository : GenerationTaskRepository {
 
     override suspend fun updateTask(task: GenerationTask) {
         tasks.value = tasks.value.map { current -> if (current.id == task.id) task else current }
+    }
+
+    override suspend fun deleteTerminalTasks(taskIds: Set<TaskId>): Set<TaskId> {
+        val deletable = tasks.value
+            .filter { task ->
+                task.id in taskIds && when (task.status) {
+                    is TaskStatus.Succeeded,
+                    is TaskStatus.Failed,
+                    is TaskStatus.Cancelled,
+                    -> true
+                    TaskStatus.Queued,
+                    TaskStatus.Running,
+                    is TaskStatus.OutcomeUnknown,
+                    -> false
+                }
+            }
+            .mapTo(mutableSetOf(), GenerationTask::id)
+        tasks.value = tasks.value.filterNot { task -> task.id in deletable }
+        return deletable
     }
 
     fun hasTerminalTask(): Boolean = tasks.value.any { task ->

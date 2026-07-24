@@ -1,5 +1,6 @@
 package io.github.ayaseminami.gnbp.ui.generation
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,22 +12,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,12 +102,19 @@ private enum class AppSection {
 }
 
 internal const val GENERATION_SUBMIT_TEST_TAG = "generation-submit"
+internal const val TASKS_SELECTION_MODE_TEST_TAG = "tasks-selection-mode"
+internal const val TASKS_SELECT_ALL_TEST_TAG = "tasks-select-all"
+internal const val TASKS_DELETE_SELECTED_TEST_TAG = "tasks-delete-selected"
+internal const val TASKS_CANCEL_SELECTED_TEST_TAG = "tasks-cancel-selected"
+internal const val TASKS_CLEAR_FAILED_TEST_TAG = "tasks-clear-failed"
+internal const val TASK_SELECTION_TEST_TAG_PREFIX = "task-selection-"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GenerationApp(
     state: GenerationUiState,
     settingsState: SettingsUiState,
+    taskManagementState: TaskManagementState,
     settingsActions: SettingsActions,
     tasks: List<GenerationTask>,
     generatedResults: List<GeneratedResult>,
@@ -119,7 +132,8 @@ fun GenerationApp(
     onPickReferences: () -> Unit,
     onRemoveReference: (MediaAssetId) -> Unit,
     onSubmit: () -> Unit,
-    onCancelTask: (TaskId) -> Unit,
+    onCancelTasks: (Set<TaskId>) -> Unit,
+    onDeleteTasks: (Set<TaskId>) -> Unit,
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
@@ -127,13 +141,19 @@ fun GenerationApp(
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onFeedbackShown: () -> Unit,
     onSettingsFeedbackShown: () -> Unit,
+    onTaskManagementFeedbackShown: () -> Unit,
 ) {
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.Generate.name) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
     val snackbarHostState = remember { SnackbarHostState() }
     val generationFeedbackMessage = state.feedback?.let { feedbackText(it) }
     val settingsFeedbackMessage = settingsState.feedback?.let { settingsFeedbackText(it) }
-    LaunchedEffect(generationFeedbackMessage, settingsFeedbackMessage) {
+    val taskManagementFeedbackMessage = taskManagementState.feedback?.let { taskManagementFeedbackText(it) }
+    LaunchedEffect(
+        generationFeedbackMessage,
+        settingsFeedbackMessage,
+        taskManagementFeedbackMessage,
+    ) {
         when {
             generationFeedbackMessage != null -> {
                 snackbarHostState.showSnackbar(generationFeedbackMessage)
@@ -142,6 +162,10 @@ fun GenerationApp(
             settingsFeedbackMessage != null -> {
                 snackbarHostState.showSnackbar(settingsFeedbackMessage)
                 onSettingsFeedbackShown()
+            }
+            taskManagementFeedbackMessage != null -> {
+                snackbarHostState.showSnackbar(taskManagementFeedbackMessage)
+                onTaskManagementFeedbackShown()
             }
         }
     }
@@ -197,7 +221,9 @@ fun GenerationApp(
                     )
                     AppSection.Tasks -> TasksScreen(
                         tasks = tasks,
-                        onCancelTask = onCancelTask,
+                        isDeleting = taskManagementState.isDeleting,
+                        onCancelTasks = onCancelTasks,
+                        onDeleteTasks = onDeleteTasks,
                         onRetryTask = onRetryTask,
                         onOpenResult = onOpenResult,
                     )
@@ -496,37 +522,111 @@ private fun BatchStepper(
     }
 }
 
+private enum class TaskDeleteConfirmation {
+    Selected,
+    Failed,
+}
+
 @Composable
-private fun TasksScreen(
+internal fun TasksScreen(
     tasks: List<GenerationTask>,
-    onCancelTask: (TaskId) -> Unit,
+    isDeleting: Boolean,
+    onCancelTasks: (Set<TaskId>) -> Unit,
+    onDeleteTasks: (Set<TaskId>) -> Unit,
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
 ) {
     var uncertainRetryTaskId by rememberSaveable { mutableStateOf<String?>(null) }
-    if (tasks.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.tasks_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedTaskIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var pendingConfirmation by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDeletionIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val visibleIds = tasks.map { task -> task.id.value }
+    val selectedIds = selectedTaskIds.toSet()
+    val selectedActiveIds = tasks
+        .filter { task ->
+            task.id.value in selectedIds &&
+                (task.status == TaskStatus.Queued || task.status == TaskStatus.Running)
         }
-    } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(tasks, key = { it.id.value }) { task ->
-                TaskCard(
-                    task = task,
-                    onCancel = { onCancelTask(task.id) },
-                    onRetry = {
-                        if (task.status is TaskStatus.OutcomeUnknown) {
-                            uncertainRetryTaskId = task.id.value
-                        } else {
-                            onRetryTask(task.id)
-                        }
-                    },
-                    onOpenResult = onOpenResult,
+        .mapTo(mutableSetOf(), GenerationTask::id)
+    val failedIds = tasks
+        .filter { task -> task.status is TaskStatus.Failed }
+        .map { task -> task.id.value }
+    LaunchedEffect(visibleIds) {
+        selectedTaskIds = selectedTaskIds.filter { id -> id in visibleIds }
+        if (visibleIds.isEmpty()) selectionMode = false
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TaskSelectionToolbar(
+            selectionMode = selectionMode,
+            selectedCount = selectedTaskIds.size,
+            allVisibleSelected = visibleIds.isNotEmpty() && visibleIds.all(selectedIds::contains),
+            hasVisibleTasks = visibleIds.isNotEmpty(),
+            hasActiveSelection = selectedActiveIds.isNotEmpty(),
+            failedCount = failedIds.size,
+            isDeleting = isDeleting,
+            onEnterSelection = { selectionMode = true },
+            onExitSelection = {
+                selectionMode = false
+                selectedTaskIds = emptyList()
+            },
+            onToggleSelectAll = {
+                selectedTaskIds = if (visibleIds.all(selectedIds::contains)) emptyList() else visibleIds
+            },
+            onCancelSelected = { onCancelTasks(selectedActiveIds) },
+            onDeleteSelected = {
+                pendingDeletionIds = selectedTaskIds
+                pendingConfirmation = TaskDeleteConfirmation.Selected.name
+            },
+            onClearFailed = {
+                pendingDeletionIds = failedIds
+                pendingConfirmation = TaskDeleteConfirmation.Failed.name
+            },
+        )
+        if (tasks.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.tasks_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(tasks, key = { it.id.value }) { task ->
+                    TaskCard(
+                        task = task,
+                        selectionMode = selectionMode,
+                        selected = task.id.value in selectedIds,
+                        onToggleSelection = {
+                            selectedTaskIds = if (task.id.value in selectedIds) {
+                                selectedTaskIds - task.id.value
+                            } else {
+                                selectedTaskIds + task.id.value
+                            }
+                        },
+                        onCancel = { onCancelTasks(setOf(task.id)) },
+                        onRetry = {
+                            if (task.status is TaskStatus.OutcomeUnknown) {
+                                uncertainRetryTaskId = task.id.value
+                            } else {
+                                onRetryTask(task.id)
+                            }
+                        },
+                        onOpenResult = onOpenResult,
+                    )
+                }
             }
         }
     }
@@ -550,18 +650,166 @@ private fun TasksScreen(
             },
         )
     }
+    pendingConfirmation?.let { rawConfirmation ->
+        val confirmation = TaskDeleteConfirmation.valueOf(rawConfirmation)
+        AlertDialog(
+            onDismissRequest = {
+                pendingConfirmation = null
+                pendingDeletionIds = emptyList()
+            },
+            title = {
+                Text(
+                    stringResource(
+                        if (confirmation == TaskDeleteConfirmation.Failed) {
+                            R.string.confirm_clear_failed_title
+                        } else {
+                            R.string.confirm_delete_tasks_title
+                        },
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        if (confirmation == TaskDeleteConfirmation.Failed) {
+                            R.string.confirm_clear_failed_message
+                        } else {
+                            R.string.confirm_delete_tasks_message
+                        },
+                        pendingDeletionIds.size,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = {
+                        val requested = pendingDeletionIds.mapTo(mutableSetOf(), ::TaskId)
+                        pendingConfirmation = null
+                        pendingDeletionIds = emptyList()
+                        onDeleteTasks(requested)
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (isDeleting) R.string.deleting_tasks else R.string.confirm_delete_tasks,
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingConfirmation = null
+                        pendingDeletionIds = emptyList()
+                    },
+                ) { Text(stringResource(R.string.dismiss_dialog)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun TaskSelectionToolbar(
+    selectionMode: Boolean,
+    selectedCount: Int,
+    allVisibleSelected: Boolean,
+    hasVisibleTasks: Boolean,
+    hasActiveSelection: Boolean,
+    failedCount: Int,
+    isDeleting: Boolean,
+    onEnterSelection: () -> Unit,
+    onExitSelection: () -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onCancelSelected: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    onClearFailed: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selectionMode) {
+            IconButton(onClick = onExitSelection) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.exit_task_selection))
+            }
+            Text(pluralStringResource(R.plurals.selected_task_count, selectedCount, selectedCount))
+            Spacer(Modifier.weight(1f))
+            IconButton(
+                onClick = onToggleSelectAll,
+                modifier = Modifier.testTag(TASKS_SELECT_ALL_TEST_TAG),
+            ) {
+                Icon(
+                    Icons.Default.SelectAll,
+                    contentDescription = stringResource(
+                        if (allVisibleSelected) R.string.clear_task_selection else R.string.select_all_tasks,
+                    ),
+                )
+            }
+            if (hasActiveSelection) {
+                IconButton(
+                    onClick = onCancelSelected,
+                    modifier = Modifier.testTag(TASKS_CANCEL_SELECTED_TEST_TAG),
+                ) {
+                    Icon(
+                        Icons.Default.Cancel,
+                        contentDescription = stringResource(R.string.cancel_selected_tasks),
+                    )
+                }
+            }
+            IconButton(
+                onClick = onDeleteSelected,
+                enabled = selectedCount > 0 && !isDeleting,
+                modifier = Modifier.testTag(TASKS_DELETE_SELECTED_TEST_TAG),
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_selected_tasks))
+            }
+        } else {
+            if (failedCount > 0) {
+                TextButton(
+                    onClick = onClearFailed,
+                    enabled = !isDeleting,
+                    modifier = Modifier.testTag(TASKS_CLEAR_FAILED_TEST_TAG),
+                ) { Text(stringResource(R.string.clear_failed_tasks)) }
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(
+                onClick = onEnterSelection,
+                enabled = hasVisibleTasks && !isDeleting,
+                modifier = Modifier.testTag(TASKS_SELECTION_MODE_TEST_TAG),
+            ) {
+                Icon(Icons.Default.Checklist, contentDescription = stringResource(R.string.select_tasks))
+            }
+        }
+    }
 }
 
 @Composable
 private fun TaskCard(
     task: GenerationTask,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelection: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("$TASK_SELECTION_TEST_TAG_PREFIX${task.id.value}")
+            .clickable(enabled = selectionMode, onClick = onToggleSelection),
         shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
+        ),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -571,13 +819,18 @@ private fun TaskCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(modifier = Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                    if (selectionMode) {
+                        Checkbox(checked = selected, onCheckedChange = { onToggleSelection() })
+                    }
+                }
                 Text(
                     text = taskStatusLabel(task.status),
                     color = taskStatusColor(task.status),
                     style = MaterialTheme.typography.labelLarge,
                 )
                 Spacer(Modifier.weight(1f))
-                when (val status = task.status) {
+                if (!selectionMode) when (val status = task.status) {
                     TaskStatus.Queued,
                     TaskStatus.Running,
                     -> IconButton(onClick = onCancel) {
@@ -764,6 +1017,17 @@ private fun feedbackText(feedback: GenerationFeedback): String = when (feedback)
     GenerationFeedback.TaskNotAvailable -> stringResource(R.string.feedback_task_unavailable)
     GenerationFeedback.PermissionDenied -> stringResource(R.string.feedback_permission_denied)
     GenerationFeedback.ResultUnavailable -> stringResource(R.string.feedback_result_unavailable)
+}
+
+@Composable
+private fun taskManagementFeedbackText(feedback: TaskManagementFeedback): String = when (feedback) {
+    is TaskManagementFeedback.DeletionCompleted -> stringResource(
+        R.string.task_deletion_feedback,
+        feedback.deletedCount,
+        feedback.blockedCount,
+        feedback.cleanupFailedCount,
+    )
+    TaskManagementFeedback.DeletionFailed -> stringResource(R.string.task_deletion_failed)
 }
 
 @Composable
