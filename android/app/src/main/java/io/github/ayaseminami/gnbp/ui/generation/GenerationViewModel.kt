@@ -19,6 +19,7 @@ import io.github.ayaseminami.gnbp.generation.ReferenceAssetInput
 import io.github.ayaseminami.gnbp.generation.RetryResult
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
+import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
@@ -111,11 +112,21 @@ class GenerationViewModel(
         settings = persistence.settings,
         scope = viewModelScope,
     )
+    private val taskManagementCoordinator = TaskManagementCoordinator(
+        scope = viewModelScope,
+        deleteTasks = { taskIds ->
+            generationRuntime.runCommand(
+                startForegroundWork = { GenerationForegroundService.start(getApplication()) },
+            ) { engine -> engine.deleteTasks(taskIds) }
+        },
+        cleanupReleasedReferences = applicationGraph::cleanupReleasedReferences,
+    )
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
     val tasks: StateFlow<List<GenerationTask>> = mutableTasks.asStateFlow()
     val generatedResults: StateFlow<List<GeneratedResult>> = mutableGeneratedResults.asStateFlow()
     val settingsState: StateFlow<SettingsUiState> = settingsCoordinator.state
+    val taskManagementState: StateFlow<TaskManagementState> = taskManagementCoordinator.state
     val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
         mutablePreviewEvents.asSharedFlow()
 
@@ -351,6 +362,30 @@ class GenerationViewModel(
         }
     }
 
+    fun cancelTasks(taskIds: Set<TaskId>) {
+        if (taskIds.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                generationRuntime.runCommand(
+                    startForegroundWork = { GenerationForegroundService.start(getApplication()) },
+                ) { engine -> taskIds.forEach { taskId -> engine.cancel(taskId) } }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                mutableUiState.update {
+                    it.copy(feedback = GenerationFeedback.TaskNotAvailable)
+                }
+            }
+        }
+    }
+
+    fun deleteTasks(
+        taskIds: Set<TaskId>,
+        retainedDraftAssetIds: Set<MediaAssetId>,
+    ) = taskManagementCoordinator.deleteTasks(taskIds, retainedDraftAssetIds)
+
+    fun clearTaskManagementFeedback() = taskManagementCoordinator.clearFeedback()
+
     fun retry(taskId: TaskId) {
         viewModelScope.launch {
             val result = try {
@@ -452,9 +487,8 @@ class GenerationViewModel(
             val persistedTasks = persistence.tasks.loadTasks()
             if (GenerationForegroundService.hasActiveTasks(persistedTasks)) {
                 GenerationForegroundService.start(application)
-            } else {
-                applicationGraph.cleanupReferences()
             }
+            applicationGraph.cleanupReferences(emptySet())
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
             val tasks by generation.tasks.collectAsState()
             val generatedResults by generation.generatedResults.collectAsState()
             val settingsState by generation.settingsState.collectAsState()
+            val taskManagementState by generation.taskManagementState.collectAsState()
             val settingsActions = remember {
                 SettingsActions(
                     onNewProfile = generation::newProfile,
@@ -110,6 +111,7 @@ class MainActivity : ComponentActivity() {
             GenerationApp(
                 state = generationState,
                 settingsState = settingsState,
+                taskManagementState = taskManagementState,
                 settingsActions = settingsActions,
                 tasks = tasks,
                 generatedResults = generatedResults,
@@ -127,7 +129,13 @@ class MainActivity : ComponentActivity() {
                 onPickReferences = referencePicker::launch,
                 onRemoveReference = referenceDraft::remove,
                 onSubmit = { submit(draftState.assets) },
-                onCancelTask = generation::cancel,
+                onCancelTasks = generation::cancelTasks,
+                onDeleteTasks = { taskIds ->
+                    generation.deleteTasks(
+                        taskIds,
+                        draftState.assets.mapTo(mutableSetOf()) { asset -> asset.id },
+                    )
+                },
                 onRetryTask = generation::retry,
                 onOpenResult = ::openResult,
                 onShareResult = ::shareResult,
@@ -135,6 +143,7 @@ class MainActivity : ComponentActivity() {
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onFeedbackShown = generation::clearFeedback,
                 onSettingsFeedbackShown = generation::clearSettingsFeedback,
+                onTaskManagementFeedbackShown = generation::clearTaskManagementFeedback,
             )
         }
         lifecycleScope.launch {

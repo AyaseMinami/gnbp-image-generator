@@ -54,6 +54,10 @@ class RoomGenerationTaskRepository internal constructor(
         taskDao.upsert(task.toEntity())
     }
 
+    override suspend fun deleteTerminalTasks(taskIds: Set<TaskId>): Set<TaskId> =
+        taskDao.deleteTerminalTasks(taskIds.map(TaskId::value))
+            .mapTo(mutableSetOf()) { entity -> TaskId(entity.id) }
+
     override suspend fun commitSucceededTask(task: GenerationTask) {
         val entity = task.toEntity()
         val asset = requireNotNull((task.status as? TaskStatus.Succeeded)?.asset) {

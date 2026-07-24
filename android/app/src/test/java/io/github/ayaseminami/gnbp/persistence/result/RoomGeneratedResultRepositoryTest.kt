@@ -16,6 +16,7 @@ import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,6 +108,30 @@ class RoomGeneratedResultRepositoryTest {
 
             assertEquals(null, tasks.findTask(succeeded.id))
             assertEquals(succeeded.id, results.loadResults().single().sourceTaskId)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `deleting a succeeded task preserves its generated result and media reference`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val tasks = RoomGenerationTaskRepository(database.taskDao())
+            val results = RoomGeneratedResultRepository(database.generatedResultDao())
+            val succeeded = successfulTask()
+            tasks.insertTasks(listOf(succeeded.copy(status = TaskStatus.Running)))
+            tasks.commitSucceededTask(succeeded)
+
+            assertEquals(setOf(succeeded.id), tasks.deleteTerminalTasks(setOf(succeeded.id)))
+
+            assertNull(tasks.findTask(succeeded.id))
+            val retained = results.loadResults().single()
+            assertEquals(succeeded.id, retained.sourceTaskId)
+            assertEquals((succeeded.status as TaskStatus.Succeeded).asset, retained.asset)
         } finally {
             database.close()
         }

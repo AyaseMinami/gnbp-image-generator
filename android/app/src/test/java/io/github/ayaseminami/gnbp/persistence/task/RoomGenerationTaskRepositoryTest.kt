@@ -4,22 +4,24 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
-import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
+import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.ReferenceAssetSnapshot
+import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
 import io.github.ayaseminami.gnbp.generation.TaskFailureReason
 import io.github.ayaseminami.gnbp.generation.TaskId
+import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.persistence.room.GnbpDatabase
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +39,10 @@ class RoomGenerationTaskRepositoryTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "gnbp-task-restart-${System.nanoTime()}.db"
         val queued = generationTask("queued", TaskStatus.Queued)
+        val deleted = generationTask(
+            "deleted-failed",
+            TaskStatus.Failed(TaskFailureReason.Transport),
+        )
         val succeeded = generationTask(
             "succeeded",
             TaskStatus.Succeeded(
@@ -52,7 +58,13 @@ class RoomGenerationTaskRepositoryTest {
 
         openDatabase(context, databaseName).let { database ->
             try {
-                RoomGenerationTaskRepository(database.taskDao()).insertTasks(listOf(queued, succeeded))
+                RoomGenerationTaskRepository(database.taskDao()).let { repository ->
+                    repository.insertTasks(listOf(queued, succeeded, deleted))
+                    assertEquals(
+                        setOf(deleted.id),
+                        repository.deleteTerminalTasks(setOf(deleted.id)),
+                    )
+                }
             } finally {
                 database.close()
             }
@@ -63,6 +75,7 @@ class RoomGenerationTaskRepositoryTest {
                 val repository = RoomGenerationTaskRepository(database.taskDao())
                 assertEquals(queued, repository.findTask(TaskId("queued")))
                 assertEquals(succeeded, repository.findTask(TaskId("succeeded")))
+                assertEquals(null, repository.findTask(deleted.id))
                 assertEquals(listOf(succeeded, queued), repository.observeTasks().first())
 
                 val queuedEntityText = database.taskDao().findById("queued").toString()
@@ -214,6 +227,124 @@ class RoomGenerationTaskRepositoryTest {
                 1,
                 repository.loadTasks().count { task -> task.sourceTaskId == source.id },
             )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `bulk terminal deletion retains active and unknown tasks`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val deletable = listOf(
+            generationTask(
+                "succeeded",
+                TaskStatus.Succeeded(
+                    GeneratedAssetReference(
+                        id = "generated",
+                        location = "content://gnbp/generated",
+                        displayName = "generated.png",
+                        mimeType = "image/png",
+                        byteSize = 3,
+                    ),
+                ),
+            ),
+            generationTask("failed", TaskStatus.Failed(TaskFailureReason.Transport)),
+            generationTask(
+                "cancelled",
+                TaskStatus.Cancelled(TaskCancellationReason.UserRequested),
+            ),
+        )
+        val retained = listOf(
+            generationTask("queued", TaskStatus.Queued),
+            generationTask("running", TaskStatus.Running),
+            generationTask(
+                "unknown",
+                TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProviderResponseUnknown),
+            ),
+        )
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            repository.insertTasks(deletable + retained)
+            assertEquals(
+                deletable.mapTo(mutableSetOf(), GenerationTask::id),
+                repository.deleteTerminalTasks(
+                    (deletable + retained).mapTo(mutableSetOf(), GenerationTask::id),
+                ),
+            )
+            assertEquals(
+                retained.mapTo(mutableSetOf(), GenerationTask::id),
+                repository.loadTasks().mapTo(mutableSetOf(), GenerationTask::id),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `bulk terminal deletion retains replacement when its retryable source is retained`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            val source = generationTask(
+                "unknown-source",
+                TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProviderResponseUnknown),
+            )
+            val replacement = generationTask(
+                "failed-replacement",
+                TaskStatus.Failed(TaskFailureReason.Transport),
+            ).copy(sourceTaskId = source.id)
+            repository.insertTasks(listOf(source, replacement))
+
+            assertEquals(
+                emptySet<TaskId>(),
+                repository.deleteTerminalTasks(setOf(source.id, replacement.id)),
+            )
+            assertEquals(
+                setOf(source.id, replacement.id),
+                repository.loadTasks().mapTo(mutableSetOf(), GenerationTask::id),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `bulk terminal deletion removes replacement when its retained source is not retryable`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            val source = generationTask(
+                "succeeded-source",
+                TaskStatus.Succeeded(
+                    GeneratedAssetReference(
+                        id = "generated-source",
+                        location = "content://gnbp/generated-source",
+                        displayName = "generated-source.png",
+                        mimeType = "image/png",
+                        byteSize = 3,
+                    ),
+                ),
+            )
+            val replacement = generationTask(
+                "failed-replacement",
+                TaskStatus.Failed(TaskFailureReason.Transport),
+            ).copy(sourceTaskId = source.id)
+            repository.insertTasks(listOf(source, replacement))
+
+            assertEquals(
+                setOf(replacement.id),
+                repository.deleteTerminalTasks(setOf(replacement.id)),
+            )
+            assertEquals(listOf(source), repository.loadTasks())
         } finally {
             database.close()
         }

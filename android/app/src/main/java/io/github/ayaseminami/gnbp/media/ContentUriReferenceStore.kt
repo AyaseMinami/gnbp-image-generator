@@ -162,6 +162,21 @@ class ContentUriReferenceStore(
         }
         .count(File::delete)
 
+    suspend fun cleanupReleasedCopies(
+        releasedAssetIds: Set<MediaAssetId>,
+        retainedAssetIds: Set<MediaAssetId>,
+    ): ReferenceReleaseCleanupReport = withContext(Dispatchers.IO) {
+        val deleted = mutableSetOf<MediaAssetId>()
+        val failed = mutableSetOf<MediaAssetId>()
+        (releasedAssetIds - retainedAssetIds).forEach { assetId ->
+            val file = File(rootDirectory, "${assetId.value}.input")
+            if (file.isFile && file.isInside(rootDirectory)) {
+                if (file.delete()) deleted += assetId else failed += assetId
+            }
+        }
+        ReferenceReleaseCleanupReport(deleted, failed)
+    }
+
     companion object {
         private const val DEFAULT_MAX_INPUT_BYTES = 64L * 1024L * 1024L
 
@@ -173,6 +188,14 @@ class ContentUriReferenceStore(
             )
         }
     }
+}
+
+data class ReferenceReleaseCleanupReport(
+    val deletedAssetIds: Set<MediaAssetId>,
+    val failedAssetIds: Set<MediaAssetId>,
+) {
+    override fun toString(): String =
+        "ReferenceReleaseCleanupReport(deletedAssetIds=[REDACTED], failedAssetIds=[REDACTED])"
 }
 
 data class ReferenceCleanupPolicy(

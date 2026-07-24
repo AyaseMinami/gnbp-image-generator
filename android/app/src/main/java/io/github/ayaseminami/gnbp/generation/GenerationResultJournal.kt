@@ -48,6 +48,11 @@ internal interface GenerationResultJournal {
     suspend fun load(taskId: TaskId): ResultJournalRecovery
 
     suspend fun delete(taskId: TaskId)
+
+    suspend fun deleteForTaskRemoval(taskId: TaskId): Boolean {
+        delete(taskId)
+        return true
+    }
 }
 
 internal object NoOpGenerationResultJournal : GenerationResultJournal {
@@ -127,6 +132,14 @@ internal class FileGenerationResultJournal(
         runCatching { stageFile(taskId).delete() }
         Unit
     }
+
+    override suspend fun deleteForTaskRemoval(taskId: TaskId): Boolean =
+        withContext(Dispatchers.IO) {
+            cleanTemporaryFilesOnce()
+            listOf(receiptFile(taskId), stageFile(taskId)).all { file ->
+                !file.exists() || runCatching(file::delete).getOrDefault(false)
+            }
+        }
 
     private fun readReceipt(file: File): AssetRef? {
         if (!file.isFile) return null

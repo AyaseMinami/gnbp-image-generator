@@ -1,7 +1,8 @@
 # Platform Parity Matrix
 
 Status: Android M7 implementation and independent review passed; M9 result-library
-work is in progress; signed public release evidence remains pending
+and task-management work is in progress; signed public release evidence remains
+pending
 
 This matrix compares observable product behavior, not screen layout or source
 code. The Android edition intentionally replaces desktop filesystem and window
@@ -19,7 +20,7 @@ notifications, and lifecycle-aware background work.
 | Multiple reference images and 1536-pixel/JPEG-85 preparation | `core/utils.py`, `ui/main_window.py` | Implemented with Photo Picker, durable app-private copies, bounded decoding, and off-main-thread preparation |
 | Immutable batch task snapshots | `ui/main_window.py`, `core/task_queue.py` | Implemented by `GenerationEngine`; queued work and explicit retry rebuild from persisted request data, the current encrypted profile, and task-owned references |
 | Batch generation and concurrency control | `core/task_queue.py`, `ui/main_window.py` | Implemented for batches of 1-16 with a mobile-safe concurrency setting of 1-2 |
-| Task state, cancellation, explicit retry, and elapsed/status presentation | `core/task_queue.py`, `ui/main_window.py` | Implemented in the persistent Tasks screen; active transport cancellation is wired through the provider call |
+| Task state, cancellation, explicit retry, deletion, and elapsed/status presentation | `core/task_queue.py`, `ui/main_window.py` | Implemented in the persistent Tasks screen with selection, confirmed bulk lifecycle actions, and active cancellation through the provider path; uncertain outcomes remain protected |
 | Collision-safe generated-image identity | `core/utils.py` | Implemented for scoped and legacy MediaStore paths with full UUID identity |
 | Preview and generated-result history | `ui/main_window.py` | Implemented with an independent Room generated-result library, Gallery thumbnails, and preview |
 | Reuse task parameters | `ui/main_window.py` | Implemented from persisted Tasks entries |
@@ -66,8 +67,7 @@ until their corresponding work is merged:
 - user-selected output folders and Explorer-style file operations;
 - clipboard image paste and drag-and-drop import;
 - configurable concurrency above the mobile cap of two;
-- individual task deletion, bulk clear operations, and a bounded retention
-  policy for terminal task history and task-owned references;
+- an automatic bounded retention policy for terminal task history;
 - additional visual themes and tablet-specific layouts.
 
 Desktop-only interaction details such as right-click menus, window sizing, and

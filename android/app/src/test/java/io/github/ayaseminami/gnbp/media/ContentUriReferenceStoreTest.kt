@@ -128,6 +128,44 @@ class ContentUriReferenceStoreTest {
         assertFalse(File(root, ".oversized.tmp").exists())
         assertFalse(File(root, "oversized.input").exists())
     }
+
+    @Test
+    fun `released cleanup deletes only candidates that have no remaining owner`() = runTest {
+        val store = ContentUriReferenceStore(
+            reader = FakeContentUriReader(null, null, null),
+            rootDirectory = root,
+        )
+        val retainedByDraft = MediaAssetId("draft-owned")
+        val retainedByTask = MediaAssetId("task-owned")
+        val retainedByResult = MediaAssetId("result-owned")
+        val releasedOrphan = MediaAssetId("released-orphan")
+        val unrelatedOrphan = MediaAssetId("unrelated-orphan")
+        listOf(
+            retainedByDraft,
+            retainedByTask,
+            retainedByResult,
+            releasedOrphan,
+            unrelatedOrphan,
+        ).forEach { id -> File(root, "${id.value}.input").writeText(id.value) }
+
+        val report = store.cleanupReleasedCopies(
+            releasedAssetIds = setOf(
+                retainedByDraft,
+                retainedByTask,
+                retainedByResult,
+                releasedOrphan,
+            ),
+            retainedAssetIds = setOf(retainedByDraft, retainedByTask, retainedByResult),
+        )
+
+        assertEquals(setOf(releasedOrphan), report.deletedAssetIds)
+        assertTrue(report.failedAssetIds.isEmpty())
+        assertFalse(File(root, "${releasedOrphan.value}.input").exists())
+        assertTrue(File(root, "${retainedByDraft.value}.input").exists())
+        assertTrue(File(root, "${retainedByTask.value}.input").exists())
+        assertTrue(File(root, "${retainedByResult.value}.input").exists())
+        assertTrue(File(root, "${unrelatedOrphan.value}.input").exists())
+    }
 }
 
 private class FakeContentUriReader(

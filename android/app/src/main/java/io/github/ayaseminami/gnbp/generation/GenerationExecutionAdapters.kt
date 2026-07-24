@@ -36,6 +36,8 @@ interface GenerationTaskRepository {
     suspend fun insertTasks(newTasks: List<GenerationTask>)
 
     suspend fun updateTask(task: GenerationTask)
+
+    suspend fun deleteTerminalTasks(taskIds: Set<TaskId>): Set<TaskId>
 }
 
 internal fun interface GenerationCompletionRepository {

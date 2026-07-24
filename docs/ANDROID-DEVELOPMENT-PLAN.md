@@ -485,6 +485,16 @@ Gallery observes that result collection independently from task history.
   individual deletion and coordinated bulk cleanup that never silently deletes
   public MediaStore results;
 
+Issue #13 implements the user-directed part of that lifecycle policy: Tasks has
+selection, select-all, confirmed clear-failed and bulk delete, plus bulk cancel
+through the existing engine path. Deletion accepts reconciled `Succeeded`,
+ordinary `Failed`, and `Cancelled` history. `Queued`, `Running`,
+`OutcomeUnknown`, unreconciled `AssetSaveFailed`, and retry-lineage-dependent
+entries remain until their blocking condition is resolved. Generated results and
+MediaStore images are independent and survive task deletion. Reference cleanup
+uses the combined draft/task/result ownership set. Automatic age/count-based
+retention remains deferred.
+
 M8 acceptance must deliberately exercise non-graceful service destruction and
 record whether the current bounded shutdown fallback causes a visible freeze.
 Further work on that fallback requires a separately approved issue and is not
@@ -790,8 +800,9 @@ long-term traceability.
 The approved M8 blockers no longer appear here. These items are not part of the
 active M9 issue set and require separate approval before implementation:
 
-- Define a bounded retention policy for terminal task history and task-owned
-  reference copies, then add repository deletion and coordinated asset cleanup.
+- Define an automatic age/count-based retention policy for terminal task
+  history. M9 Issue #13 provides explicit deletion and ownership-aware reference
+  cleanup but does not delete history without a user command.
 - Apply a changed maximum-concurrency setting to an already-active runtime. The
   M7 service uses the persisted value when it creates the engine; later changes
   take effect after the current foreground runtime becomes idle and restarts.

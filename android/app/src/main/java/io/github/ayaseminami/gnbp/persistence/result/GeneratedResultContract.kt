@@ -28,8 +28,8 @@ data class GeneratedResult(
     val isFavorite: Boolean = false,
 ) {
     override fun toString(): String =
-        "GeneratedResult(id=[REDACTED], sourceTaskId=[REDACTED], request=$request, " +
-            "asset=$asset, createdAt=[REDACTED], isFavorite=$isFavorite)"
+        "GeneratedResult(id=[REDACTED], sourceTaskId=[REDACTED], request=[REDACTED], " +
+            "asset=[REDACTED], createdAt=[REDACTED], isFavorite=$isFavorite)"
 }
 
 interface GeneratedResultRepository {
