@@ -77,6 +77,7 @@
     <string name="confirm_delete_results_device_message">This will delete %1$d app-generated images from MediaStore and remove their result records. Task history is not deleted.</string>
     <string name="confirm_delete_results_device">Delete from device</string>
     <string name="gallery_remove_feedback">Removed %1$d from the library; %2$d failed</string>
+    <string name="gallery_share_feedback">Prepared %1$d for sharing; %2$d unavailable</string>
     <string name="gallery_device_delete_feedback">Deleted %1$d from the device; %2$d failed</string>
     <plurals name="selected_result_count">
         <item quantity="one">%d selected</item>

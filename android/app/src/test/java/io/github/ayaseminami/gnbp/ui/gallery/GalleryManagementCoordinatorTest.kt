@@ -5,6 +5,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskRequestSnapshot
 import io.github.ayaseminami.gnbp.media.AssetDeleteResult
+import io.github.ayaseminami.gnbp.media.AssetAccessResult
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
@@ -29,6 +30,42 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class GalleryManagementCoordinatorTest {
     @Test
+    fun `batch share emits only readable results and reports per item failures`() = runTest {
+        val available = result("available")
+        val missing = result("missing")
+        val denied = result("denied")
+        val byId = listOf(available, missing, denied).associateBy(GeneratedResult::id)
+        val shared = mutableListOf<List<GeneratedAssetReference>>()
+        val coordinator = GalleryManagementCoordinator(
+            scope = this,
+            findResult = byId::get,
+            removeResults = { emptySet() },
+            checkAsset = { asset ->
+                when (asset.id.value) {
+                    "available" -> AssetAccessResult.Available
+                    "missing" -> AssetAccessResult.Missing
+                    else -> AssetAccessResult.PermissionDenied
+                }
+            },
+            deleteAsset = { AssetDeleteResult.Deleted },
+            shareReady = { assets -> shared += assets },
+        )
+
+        coordinator.shareResults(setOf(available.id, missing.id, denied.id))
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf(available.asset)), shared)
+        assertEquals(
+            GalleryManagementFeedback.Completed(
+                action = GalleryBulkAction.Share,
+                completedCount = 1,
+                failedCount = 2,
+            ),
+            coordinator.state.value.feedback,
+        )
+    }
+
+    @Test
     fun `remove from library reports missing rows without touching media`() = runTest {
         val first = result("first")
         val missing = GeneratedResultId("result-missing")
@@ -41,10 +78,12 @@ class GalleryManagementCoordinatorTest {
                 removedRequests += ids
                 setOf(first.id)
             },
+            checkAsset = { AssetAccessResult.Available },
             deleteAsset = {
                 mediaDeleteCount += 1
                 AssetDeleteResult.Deleted
             },
+            shareReady = {},
         )
 
         coordinator.removeFromLibrary(setOf(first.id, missing))
@@ -78,6 +117,7 @@ class GalleryManagementCoordinatorTest {
                 removedRequests += ids
                 ids
             },
+            checkAsset = { AssetAccessResult.Available },
             deleteAsset = { asset ->
                 when (asset.id.value) {
                     "deleted" -> AssetDeleteResult.Deleted
@@ -85,6 +125,7 @@ class GalleryManagementCoordinatorTest {
                     else -> AssetDeleteResult.Missing
                 }
             },
+            shareReady = {},
         )
 
         coordinator.deleteFromDevice(setOf(deleted.id, denied.id, missingMedia.id, missingResultId))
@@ -110,10 +151,12 @@ class GalleryManagementCoordinatorTest {
             scope = this,
             findResult = byId::get,
             removeResults = { it },
+            checkAsset = { AssetAccessResult.Available },
             deleteAsset = { asset ->
                 if (asset.id.value == "failing") error("provider rejected deletion")
                 AssetDeleteResult.Deleted
             },
+            shareReady = {},
         )
 
         coordinator.deleteFromDevice(setOf(failing.id, succeeding.id))
@@ -141,7 +184,9 @@ class GalleryManagementCoordinatorTest {
                 allowRemoval.await()
                 ids
             },
+            checkAsset = { AssetAccessResult.Available },
             deleteAsset = { AssetDeleteResult.Deleted },
+            shareReady = {},
         )
 
         coordinator.removeFromLibrary(setOf(GeneratedResultId("result-first")))
@@ -162,7 +207,9 @@ class GalleryManagementCoordinatorTest {
             scope = this,
             findResult = { null },
             removeResults = { throw CancellationException("cancelled") },
+            checkAsset = { AssetAccessResult.Available },
             deleteAsset = { AssetDeleteResult.Deleted },
+            shareReady = {},
         )
 
         coordinator.removeFromLibrary(setOf(GeneratedResultId("result-cancelled")))

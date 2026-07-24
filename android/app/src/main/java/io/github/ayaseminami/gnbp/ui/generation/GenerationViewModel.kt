@@ -107,6 +107,9 @@ class GenerationViewModel(
     private val mutablePreviewEvents = MutableSharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>(
         extraBufferCapacity = 1,
     )
+    private val mutableGalleryShareEvents = MutableSharedFlow<List<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>>(
+        extraBufferCapacity = 1,
+    )
     private val completionTracker = TaskCompletionTracker()
     private val settingsCoordinator = SettingsCoordinator(
         profiles = persistence.profiles,
@@ -127,7 +130,9 @@ class GenerationViewModel(
         scope = viewModelScope,
         findResult = persistence.generatedResults::findResult,
         removeResults = persistence.generatedResults::removeResults,
+        checkAsset = applicationGraph.generatedAssetStore::checkReadable,
         deleteAsset = applicationGraph.generatedAssetStore::delete,
+        shareReady = mutableGalleryShareEvents::emit,
     )
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
@@ -138,6 +143,8 @@ class GenerationViewModel(
     val galleryManagementState: StateFlow<GalleryManagementState> = galleryManagementCoordinator.state
     val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
         mutablePreviewEvents.asSharedFlow()
+    val galleryShareEvents: SharedFlow<List<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>> =
+        mutableGalleryShareEvents.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -397,6 +404,9 @@ class GenerationViewModel(
 
     fun removeGeneratedResultsFromLibrary(ids: Set<GeneratedResultId>) =
         galleryManagementCoordinator.removeFromLibrary(ids)
+
+    fun shareGeneratedResults(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.shareResults(ids)
 
     fun deleteGeneratedResultsFromDevice(ids: Set<GeneratedResultId>) =
         galleryManagementCoordinator.deleteFromDevice(ids)

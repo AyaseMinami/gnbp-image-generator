@@ -1,5 +1,7 @@
 package io.github.ayaseminami.gnbp.ui.gallery
 
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
+import io.github.ayaseminami.gnbp.media.AssetAccessResult
 import io.github.ayaseminami.gnbp.media.AssetDeleteResult
 import io.github.ayaseminami.gnbp.media.AssetRef
 import io.github.ayaseminami.gnbp.media.toAssetRef
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class GalleryBulkAction {
+    Share,
     RemoveFromLibrary,
     DeleteFromDevice,
 }
@@ -35,7 +38,9 @@ internal class GalleryManagementCoordinator(
     private val scope: CoroutineScope,
     private val findResult: suspend (GeneratedResultId) -> GeneratedResult?,
     private val removeResults: suspend (Set<GeneratedResultId>) -> Set<GeneratedResultId>,
+    private val checkAsset: suspend (AssetRef) -> AssetAccessResult,
     private val deleteAsset: suspend (AssetRef) -> AssetDeleteResult,
+    private val shareReady: suspend (List<GeneratedAssetReference>) -> Unit,
 ) {
     private val mutableState = MutableStateFlow(GalleryManagementState())
     val state: StateFlow<GalleryManagementState> = mutableState.asStateFlow()
@@ -45,6 +50,29 @@ internal class GalleryManagementCoordinator(
         requestedIds = ids,
     ) {
         removeResults(ids)
+    }
+
+    fun shareResults(ids: Set<GeneratedResultId>) = runCommand(
+        action = GalleryBulkAction.Share,
+        requestedIds = ids,
+    ) {
+        val shareableIds = mutableSetOf<GeneratedResultId>()
+        val shareableAssets = mutableListOf<GeneratedAssetReference>()
+        ids.forEach { id ->
+            try {
+                val result = findResult(id) ?: return@forEach
+                if (checkAsset(result.asset.toAssetRef()) == AssetAccessResult.Available) {
+                    shareableIds += id
+                    shareableAssets += result.asset
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+        if (shareableAssets.isNotEmpty()) shareReady(shareableAssets)
+        shareableIds
     }
 
     fun deleteFromDevice(ids: Set<GeneratedResultId>) = runCommand(

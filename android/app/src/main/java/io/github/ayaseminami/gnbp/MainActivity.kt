@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
                 onRetryTask = generation::retry,
                 onOpenResult = ::openResult,
                 onShareResult = ::shareResult,
-                onShareResults = ::shareResults,
+                onShareResults = generation::shareGeneratedResults,
                 onReuseResult = ::reuseResult,
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
@@ -155,6 +155,11 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 generation.previewEvents.collect(::openResult)
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                generation.galleryShareEvents.collect(::shareResults)
             }
         }
     }

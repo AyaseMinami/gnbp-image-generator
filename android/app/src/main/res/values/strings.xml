@@ -76,6 +76,7 @@
     <string name="confirm_delete_results_device_message">将从系统图库删除 %1$d 张应用生成的图片并移除对应结果记录。任务历史不会删除。</string>
     <string name="confirm_delete_results_device">从设备删除</string>
     <string name="gallery_remove_feedback">已从结果库移除 %1$d 条；失败 %2$d 条</string>
+    <string name="gallery_share_feedback">已准备分享 %1$d 张；不可用 %2$d 张</string>
     <string name="gallery_device_delete_feedback">已从设备删除 %1$d 张；失败 %2$d 张</string>
     <plurals name="selected_result_count">
         <item quantity="other">已选择 %d 条</item>

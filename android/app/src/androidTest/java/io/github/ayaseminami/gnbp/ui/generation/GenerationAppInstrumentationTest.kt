@@ -37,6 +37,7 @@ import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
+import io.github.ayaseminami.gnbp.media.AssetAccessResult
 import io.github.ayaseminami.gnbp.media.AssetDeleteResult
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
@@ -316,7 +317,7 @@ class GenerationAppInstrumentationTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val favorite = generatedResult("favorite", "favorite prompt", favorite = true)
         val ordinary = generatedResult("ordinary", "ordinary prompt", favorite = false)
-        val shared = AtomicReference<List<GeneratedAssetReference>>(emptyList())
+        val shared = AtomicReference<Set<GeneratedResultId>>(emptySet())
         val removed = AtomicReference<Set<GeneratedResultId>>(emptySet())
         compose.setContent {
             GalleryScreen(
@@ -337,7 +338,7 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithTag(GALLERY_SELECT_ALL_TEST_TAG).performClick()
         compose.onNodeWithTag(GALLERY_SHARE_SELECTED_TEST_TAG).performClick()
         compose.waitUntil(timeoutMillis = 2_000) { shared.get().isNotEmpty() }
-        assertEquals(listOf(favorite.asset), shared.get())
+        assertEquals(setOf(favorite.id), shared.get())
 
         compose.onNodeWithTag(GALLERY_MORE_ACTIONS_TEST_TAG).performClick()
         compose.onNodeWithTag(GALLERY_REMOVE_SELECTED_TEST_TAG).performClick()
@@ -721,6 +722,8 @@ private class InstrumentedAssetStore : GeneratedAssetStore {
     )
 
     override suspend fun read(asset: AssetRef): AssetReadResult = error("Not used")
+
+    override suspend fun checkReadable(asset: AssetRef): AssetAccessResult = error("Not used")
 
     override suspend fun delete(asset: AssetRef): AssetDeleteResult = error("Not used")
 }

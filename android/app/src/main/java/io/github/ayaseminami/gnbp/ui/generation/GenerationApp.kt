@@ -141,7 +141,7 @@ fun GenerationApp(
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
-    onShareResults: (List<GeneratedAssetReference>) -> Unit,
+    onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveResultsFromLibrary: (Set<GeneratedResultId>) -> Unit,
@@ -1054,6 +1054,7 @@ private fun taskManagementFeedbackText(feedback: TaskManagementFeedback): String
 private fun galleryManagementFeedbackText(feedback: GalleryManagementFeedback): String = when (feedback) {
     is GalleryManagementFeedback.Completed -> stringResource(
         when (feedback.action) {
+            GalleryBulkAction.Share -> R.string.gallery_share_feedback
             GalleryBulkAction.RemoveFromLibrary -> R.string.gallery_remove_feedback
             GalleryBulkAction.DeleteFromDevice -> R.string.gallery_device_delete_feedback
         },

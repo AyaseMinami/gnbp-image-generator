@@ -33,7 +33,19 @@ interface GeneratedAssetStore {
 
     suspend fun read(asset: AssetRef): AssetReadResult
 
+    suspend fun checkReadable(asset: AssetRef): AssetAccessResult
+
     suspend fun delete(asset: AssetRef): AssetDeleteResult
+}
+
+sealed interface AssetAccessResult {
+    data object Available : AssetAccessResult
+
+    data object Missing : AssetAccessResult
+
+    data object PermissionDenied : AssetAccessResult
+
+    data object Failed : AssetAccessResult
 }
 
 sealed interface AssetDeleteResult {
@@ -160,6 +172,22 @@ class MediaStoreGeneratedAssetStore(
             AssetReadResult.ReadFailed
         } catch (_: IOException) {
             AssetReadResult.ReadFailed
+        }
+    }
+
+    override suspend fun checkReadable(asset: AssetRef): AssetAccessResult = withContext(Dispatchers.IO) {
+        val input = try {
+            gateway.openInput(asset.uri)
+        } catch (_: SecurityException) {
+            return@withContext AssetAccessResult.PermissionDenied
+        } catch (_: Exception) {
+            return@withContext AssetAccessResult.Failed
+        } ?: return@withContext AssetAccessResult.Missing
+        try {
+            input.close()
+            AssetAccessResult.Available
+        } catch (_: IOException) {
+            AssetAccessResult.Failed
         }
     }
 

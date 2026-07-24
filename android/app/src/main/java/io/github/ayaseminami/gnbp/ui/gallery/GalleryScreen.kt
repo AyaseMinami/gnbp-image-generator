@@ -1,5 +1,6 @@
 package io.github.ayaseminami.gnbp.ui.gallery
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -73,9 +74,21 @@ internal const val GALLERY_REMOVE_SELECTED_TEST_TAG = "gallery-remove-selected"
 internal const val GALLERY_DELETE_SELECTED_TEST_TAG = "gallery-delete-selected"
 internal const val GALLERY_SELECTION_TEST_TAG_PREFIX = "gallery-selection-"
 
-private enum class GalleryConfirmation {
-    RemoveFromLibrary,
-    DeleteFromDevice,
+private enum class GalleryConfirmation(
+    @param:StringRes val titleResource: Int,
+    @param:StringRes val messageResource: Int,
+    @param:StringRes val confirmResource: Int,
+) {
+    RemoveFromLibrary(
+        R.string.confirm_remove_results_title,
+        R.string.confirm_remove_results_message,
+        R.string.confirm_remove_results,
+    ),
+    DeleteFromDevice(
+        R.string.confirm_delete_results_device_title,
+        R.string.confirm_delete_results_device_message,
+        R.string.confirm_delete_results_device,
+    ),
 }
 
 @Composable
@@ -84,7 +97,7 @@ fun GalleryScreen(
     isWorking: Boolean,
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
-    onShareResults: (List<GeneratedAssetReference>) -> Unit,
+    onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
     onSetFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveFromLibrary: (Set<GeneratedResultId>) -> Unit,
@@ -128,7 +141,9 @@ fun GalleryScreen(
             onToggleSelectAll = {
                 selectedResultIds = if (visibleIds.all(selectedIds::contains)) emptyList() else visibleIds
             },
-            onShareSelected = { onShareResults(selectedResults.map(GeneratedResult::asset)) },
+            onShareSelected = {
+                onShareResults(selectedResults.mapTo(mutableSetOf(), GeneratedResult::id))
+            },
             onRemoveSelected = { pendingConfirmation = GalleryConfirmation.RemoveFromLibrary.name },
             onDeleteSelected = { pendingConfirmation = GalleryConfirmation.DeleteFromDevice.name },
         )
@@ -173,27 +188,12 @@ fun GalleryScreen(
         AlertDialog(
             onDismissRequest = { pendingConfirmation = null },
             title = {
-                Text(
-                    stringResource(
-                        if (confirmation == GalleryConfirmation.RemoveFromLibrary) {
-                            R.string.confirm_remove_results_title
-                        } else {
-                            R.string.confirm_delete_results_device_title
-                        },
-                    ),
-                )
+                Text(stringResource(confirmation.titleResource))
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        stringResource(
-                            if (confirmation == GalleryConfirmation.RemoveFromLibrary) {
-                                R.string.confirm_remove_results_message
-                            } else {
-                                R.string.confirm_delete_results_device_message
-                            },
-                            selectedResults.size,
-                        ),
+                        stringResource(confirmation.messageResource, selectedResults.size),
                     )
                     if (selectedFavoriteCount > 0) {
                         Text(
@@ -222,15 +222,7 @@ fun GalleryScreen(
                         }
                     },
                 ) {
-                    Text(
-                        stringResource(
-                            if (confirmation == GalleryConfirmation.RemoveFromLibrary) {
-                                R.string.confirm_remove_results
-                            } else {
-                                R.string.confirm_delete_results_device
-                            },
-                        ),
-                    )
+                    Text(stringResource(confirmation.confirmResource))
                 }
             },
             dismissButton = {
