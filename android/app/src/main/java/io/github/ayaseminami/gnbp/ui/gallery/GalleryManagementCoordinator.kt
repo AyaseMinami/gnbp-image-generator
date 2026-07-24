@@ -58,17 +58,10 @@ internal class GalleryManagementCoordinator(
     ) {
         val shareableIds = mutableSetOf<GeneratedResultId>()
         val shareableAssets = mutableListOf<GeneratedAssetReference>()
-        ids.forEach { id ->
-            try {
-                val result = findResult(id) ?: return@forEach
-                if (checkAsset(result.asset.toAssetRef()) == AssetAccessResult.Available) {
-                    shareableIds += id
-                    shareableAssets += result.asset
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                Unit
+        forEachResolvedResult(ids) { id, result ->
+            if (checkAsset(result.asset.toAssetRef()) == AssetAccessResult.Available) {
+                shareableIds += id
+                shareableAssets += result.asset
             }
         }
         if (shareableAssets.isNotEmpty()) shareReady(shareableAssets)
@@ -79,14 +72,10 @@ internal class GalleryManagementCoordinator(
         action = GalleryBulkAction.DeleteFromDevice,
         requestedIds = ids,
     ) {
-        val mediaDeletedIds = ids.mapNotNullTo(mutableSetOf()) { id ->
-            try {
-                val result = findResult(id) ?: return@mapNotNullTo null
-                id.takeIf { deleteAsset(result.asset.toAssetRef()) == AssetDeleteResult.Deleted }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
+        val mediaDeletedIds = mutableSetOf<GeneratedResultId>()
+        forEachResolvedResult(ids) { id, result ->
+            if (deleteAsset(result.asset.toAssetRef()) == AssetDeleteResult.Deleted) {
+                mediaDeletedIds += id
             }
         }
         if (mediaDeletedIds.isEmpty()) emptySet() else removeResults(mediaDeletedIds)
@@ -94,6 +83,22 @@ internal class GalleryManagementCoordinator(
 
     fun clearFeedback() {
         mutableState.update { state -> state.copy(feedback = null) }
+    }
+
+    private suspend fun forEachResolvedResult(
+        ids: Set<GeneratedResultId>,
+        action: suspend (GeneratedResultId, GeneratedResult) -> Unit,
+    ) {
+        ids.forEach { id ->
+            try {
+                val result = findResult(id) ?: return@forEach
+                action(id, result)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                Unit
+            }
+        }
     }
 
     private fun runCommand(
