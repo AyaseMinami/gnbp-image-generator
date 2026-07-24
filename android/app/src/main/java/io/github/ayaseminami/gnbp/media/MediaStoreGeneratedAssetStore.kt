@@ -1,6 +1,7 @@
 package io.github.ayaseminami.gnbp.media
 
 import android.Manifest
+import android.content.ClipData
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
@@ -32,7 +33,17 @@ interface GeneratedAssetStore {
 
     suspend fun read(asset: AssetRef): AssetReadResult
 
-    suspend fun delete(asset: AssetRef): Boolean
+    suspend fun delete(asset: AssetRef): AssetDeleteResult
+}
+
+sealed interface AssetDeleteResult {
+    data object Deleted : AssetDeleteResult
+
+    data object Missing : AssetDeleteResult
+
+    data object PermissionDenied : AssetDeleteResult
+
+    data object Failed : AssetDeleteResult
 }
 
 interface MediaStoreGateway {
@@ -152,8 +163,15 @@ class MediaStoreGeneratedAssetStore(
         }
     }
 
-    override suspend fun delete(asset: AssetRef): Boolean = withContext(Dispatchers.IO) {
-        runCatching { gateway.delete(asset.uri) }.getOrDefault(false)
+    override suspend fun delete(asset: AssetRef): AssetDeleteResult = withContext(Dispatchers.IO) {
+        val deleted = try {
+            gateway.delete(asset.uri)
+        } catch (_: SecurityException) {
+            return@withContext AssetDeleteResult.PermissionDenied
+        } catch (_: Exception) {
+            return@withContext AssetDeleteResult.Failed
+        }
+        if (deleted) AssetDeleteResult.Deleted else AssetDeleteResult.Missing
     }
 
     private fun scopedValues(
@@ -216,6 +234,20 @@ fun AssetRef.shareIntent(): Intent = Intent(Intent.ACTION_SEND).apply {
     type = mimeType
     putExtra(Intent.EXTRA_STREAM, uri)
     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+}
+
+fun List<AssetRef>.shareIntent(): Intent {
+    require(isNotEmpty()) { "At least one generated asset is required for sharing" }
+    val uris = mapTo(ArrayList(size), AssetRef::uri)
+    val sharedMimeType = map(AssetRef::mimeType).distinct().singleOrNull() ?: "image/*"
+    return Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        type = sharedMimeType
+        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        clipData = ClipData.newRawUri("generated images", uris.first()).apply {
+            uris.drop(1).forEach { uri -> addItem(ClipData.Item(uri)) }
+        }
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
 }
 
 fun AssetRef.previewIntent(): Intent = Intent(Intent.ACTION_VIEW).apply {

@@ -41,7 +41,7 @@ class ScopedMediaInstrumentationTest {
         imported as ReferenceImportResult.Imported
         assertTrue(imported.asset.asReferenceImage(BoundedImagePreparer()) is ImagePreparationResult.Prepared)
 
-        assertTrue(assetStore.delete(saved.asset))
+        assertEquals(AssetDeleteResult.Deleted, assetStore.delete(saved.asset))
         assertEquals(AssetReadResult.ExternalAssetMissing, assetStore.read(saved.asset))
         assertEquals(
             ReferenceImportResult.Failed(ReferenceImportFailure.AccessRevoked),
@@ -119,7 +119,7 @@ class LegacyMediaStoreInstrumentationTest {
         assertTrue(saved is AssetSaveResult.Saved)
         saved as AssetSaveResult.Saved
         assertTrue(assetStore.read(saved.asset) is AssetReadResult.Opened)
-        assertTrue(assetStore.delete(saved.asset))
+        assertEquals(AssetDeleteResult.Deleted, assetStore.delete(saved.asset))
     }
 }
 

@@ -47,6 +47,8 @@ import io.github.ayaseminami.gnbp.ui.settings.SettingsCoordinator
 import io.github.ayaseminami.gnbp.ui.settings.SettingsUiState
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionEvent
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementCoordinator
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementState
 
 data class GenerationUiState(
     val profiles: List<ProfileSummary> = emptyList(),
@@ -121,12 +123,19 @@ class GenerationViewModel(
         },
         cleanupReleasedReferences = applicationGraph::cleanupReleasedReferences,
     )
+    private val galleryManagementCoordinator = GalleryManagementCoordinator(
+        scope = viewModelScope,
+        findResult = persistence.generatedResults::findResult,
+        removeResults = persistence.generatedResults::removeResults,
+        deleteAsset = applicationGraph.generatedAssetStore::delete,
+    )
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
     val tasks: StateFlow<List<GenerationTask>> = mutableTasks.asStateFlow()
     val generatedResults: StateFlow<List<GeneratedResult>> = mutableGeneratedResults.asStateFlow()
     val settingsState: StateFlow<SettingsUiState> = settingsCoordinator.state
     val taskManagementState: StateFlow<TaskManagementState> = taskManagementCoordinator.state
+    val galleryManagementState: StateFlow<GalleryManagementState> = galleryManagementCoordinator.state
     val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
         mutablePreviewEvents.asSharedFlow()
 
@@ -385,6 +394,14 @@ class GenerationViewModel(
     ) = taskManagementCoordinator.deleteTasks(taskIds, retainedDraftAssetIds)
 
     fun clearTaskManagementFeedback() = taskManagementCoordinator.clearFeedback()
+
+    fun removeGeneratedResultsFromLibrary(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.removeFromLibrary(ids)
+
+    fun deleteGeneratedResultsFromDevice(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.deleteFromDevice(ids)
+
+    fun clearGalleryManagementFeedback() = galleryManagementCoordinator.clearFeedback()
 
     fun retry(taskId: TaskId) {
         viewModelScope.launch {

@@ -62,6 +62,30 @@
     <string name="share_result">Share result</string>
     <string name="share_chooser_title">Share generated result</string>
     <string name="reuse_as_reference">Reuse as reference image</string>
+    <string name="select_results">Select results</string>
+    <string name="exit_gallery_selection">Exit selection</string>
+    <string name="select_all_results">Select all visible results</string>
+    <string name="clear_result_selection">Clear selection</string>
+    <string name="share_selected_results">Share selected results</string>
+    <string name="more_result_actions">More result actions</string>
+    <string name="remove_selected_from_library">Remove from library</string>
+    <string name="delete_selected_from_device">Delete from device</string>
+    <string name="confirm_remove_results_title">Remove from library?</string>
+    <string name="confirm_remove_results_message">This will remove %1$d result records. Images remain in MediaStore and task history is unchanged.</string>
+    <string name="confirm_remove_results">Remove from library</string>
+    <string name="confirm_delete_results_device_title">Delete images from device?</string>
+    <string name="confirm_delete_results_device_message">This will delete %1$d app-generated images from MediaStore and remove their result records. Task history is not deleted.</string>
+    <string name="confirm_delete_results_device">Delete from device</string>
+    <string name="gallery_remove_feedback">Removed %1$d from the library; %2$d failed</string>
+    <string name="gallery_device_delete_feedback">Deleted %1$d from the device; %2$d failed</string>
+    <plurals name="selected_result_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="selected_favorite_count">
+        <item quantity="one">%d selected result is a favorite. Confirming still applies this action.</item>
+        <item quantity="other">%d selected results are favorites. Confirming still applies this action.</item>
+    </plurals>
     <string name="task_created_at">Created %1$s</string>
     <string name="task_unknown_warning">The request may have reached the provider. Retrying may incur another charge.</string>
     <string name="task_error_provider_unavailable">The original API profile is unavailable. Check Settings before retrying.</string>

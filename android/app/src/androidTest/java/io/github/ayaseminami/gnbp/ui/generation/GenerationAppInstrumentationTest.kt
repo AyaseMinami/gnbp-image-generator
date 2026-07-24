@@ -26,6 +26,7 @@ import io.github.ayaseminami.gnbp.generation.DirectReplacementCommit
 import io.github.ayaseminami.gnbp.generation.EnqueueResult
 import io.github.ayaseminami.gnbp.generation.GenerationBatchRequest
 import io.github.ayaseminami.gnbp.generation.GenerationCompletionRepository
+import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.generation.GenerationProviderFactory
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
@@ -36,6 +37,7 @@ import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
+import io.github.ayaseminami.gnbp.media.AssetDeleteResult
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.GeneratedAssetStore
@@ -58,6 +60,14 @@ import io.github.ayaseminami.gnbp.ui.settings.SETTINGS_SAVE_PROFILE_TEST_TAG
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementState
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_DELETE_SELECTED_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_MORE_ACTIONS_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_REMOVE_SELECTED_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SELECTION_MODE_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SELECTION_TEST_TAG_PREFIX
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SELECT_ALL_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SHARE_SELECTED_TEST_TAG
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -175,6 +185,7 @@ class GenerationAppInstrumentationTest {
                 state = state,
                 settingsState = SettingsUiState(),
                 taskManagementState = TaskManagementState(),
+                galleryManagementState = GalleryManagementState(),
                 settingsActions = noOpSettingsActions(),
                 tasks = tasks,
                 generatedResults = results,
@@ -197,11 +208,15 @@ class GenerationAppInstrumentationTest {
                 onRetryTask = {},
                 onOpenResult = {},
                 onShareResult = { shareInvoked.set(true) },
+                onShareResults = {},
                 onReuseResult = { reuseInvoked.set(true) },
                 onSetResultFavorite = { _, _ -> },
+                onRemoveResultsFromLibrary = {},
+                onDeleteResultsFromDevice = {},
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
                 onTaskManagementFeedbackShown = {},
+                onGalleryManagementFeedbackShown = {},
             )
         }
 
@@ -247,14 +262,18 @@ class GenerationAppInstrumentationTest {
             }
             GalleryScreen(
                 results = results,
+                isWorking = false,
                 onOpenResult = {},
                 onShareResult = {},
+                onShareResults = {},
                 onReuseResult = {},
                 onSetFavorite = { id, favorite ->
                     results = results.map { result ->
                         if (result.id == id) result.copy(isFavorite = favorite) else result
                     }
                 },
+                onRemoveFromLibrary = {},
+                onDeleteFromDevice = {},
             )
         }
 
@@ -275,10 +294,14 @@ class GenerationAppInstrumentationTest {
                 results = listOf(
                     generatedResult("missing", "recoverable prompt", favorite = false),
                 ),
+                isWorking = false,
                 onOpenResult = {},
                 onShareResult = {},
+                onShareResults = {},
                 onReuseResult = {},
                 onSetFavorite = { _, _ -> },
+                onRemoveFromLibrary = {},
+                onDeleteFromDevice = {},
             )
         }
 
@@ -286,6 +309,77 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithContentDescription(
             context.getString(R.string.gallery_thumbnail_unavailable),
         ).assertIsDisplayed()
+    }
+
+    @Test
+    fun gallerySelectionSharesAndRemovesOnlyResultsInTheCurrentFilter() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val favorite = generatedResult("favorite", "favorite prompt", favorite = true)
+        val ordinary = generatedResult("ordinary", "ordinary prompt", favorite = false)
+        val shared = AtomicReference<List<GeneratedAssetReference>>(emptyList())
+        val removed = AtomicReference<Set<GeneratedResultId>>(emptySet())
+        compose.setContent {
+            GalleryScreen(
+                results = listOf(favorite, ordinary),
+                isWorking = false,
+                onOpenResult = {},
+                onShareResult = {},
+                onShareResults = shared::set,
+                onReuseResult = {},
+                onSetFavorite = { _, _ -> },
+                onRemoveFromLibrary = removed::set,
+                onDeleteFromDevice = {},
+            )
+        }
+
+        compose.onNodeWithText(context.getString(R.string.gallery_favorites_only)).performClick()
+        compose.onNodeWithTag(GALLERY_SELECTION_MODE_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_SELECT_ALL_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_SHARE_SELECTED_TEST_TAG).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { shared.get().isNotEmpty() }
+        assertEquals(listOf(favorite.asset), shared.get())
+
+        compose.onNodeWithTag(GALLERY_MORE_ACTIONS_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_REMOVE_SELECTED_TEST_TAG).performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm_remove_results_title)).assertIsDisplayed()
+        compose.onNodeWithText(
+            context.resources.getQuantityString(R.plurals.selected_favorite_count, 1, 1),
+        ).assertIsDisplayed()
+        assertTrue(removed.get().isEmpty())
+        compose.onNodeWithText(context.getString(R.string.confirm_remove_results)).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { removed.get().isNotEmpty() }
+        assertEquals(setOf(favorite.id), removed.get())
+    }
+
+    @Test
+    fun galleryDeleteFromDeviceRequiresExplicitConfirmation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val result = generatedResult("device", "device prompt", favorite = false)
+        val deleted = AtomicReference<Set<GeneratedResultId>>(emptySet())
+        compose.setContent {
+            GalleryScreen(
+                results = listOf(result),
+                isWorking = false,
+                onOpenResult = {},
+                onShareResult = {},
+                onShareResults = {},
+                onReuseResult = {},
+                onSetFavorite = { _, _ -> },
+                onRemoveFromLibrary = {},
+                onDeleteFromDevice = deleted::set,
+            )
+        }
+
+        compose.onNodeWithTag(GALLERY_SELECTION_MODE_TEST_TAG).performClick()
+        compose.onNodeWithTag("$GALLERY_SELECTION_TEST_TAG_PREFIX${result.id.value}").performClick()
+        compose.onNodeWithTag(GALLERY_MORE_ACTIONS_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_DELETE_SELECTED_TEST_TAG).performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_results_device_title))
+            .assertIsDisplayed()
+        assertTrue(deleted.get().isEmpty())
+        compose.onNodeWithText(context.getString(R.string.confirm_delete_results_device)).performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { deleted.get().isNotEmpty() }
+        assertEquals(setOf(result.id), deleted.get())
     }
 
     @Test
@@ -426,6 +520,7 @@ class GenerationAppInstrumentationTest {
                 state = GenerationUiState(isLoading = false),
                 settingsState = settingsState,
                 taskManagementState = TaskManagementState(),
+                galleryManagementState = GalleryManagementState(),
                 settingsActions = actions,
                 tasks = emptyList(),
                 generatedResults = emptyList(),
@@ -448,11 +543,15 @@ class GenerationAppInstrumentationTest {
                 onRetryTask = {},
                 onOpenResult = {},
                 onShareResult = {},
+                onShareResults = {},
                 onReuseResult = {},
                 onSetResultFavorite = { _, _ -> },
+                onRemoveResultsFromLibrary = {},
+                onDeleteResultsFromDevice = {},
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
                 onTaskManagementFeedbackShown = {},
+                onGalleryManagementFeedbackShown = {},
             )
         }
 
@@ -623,7 +722,7 @@ private class InstrumentedAssetStore : GeneratedAssetStore {
 
     override suspend fun read(asset: AssetRef): AssetReadResult = error("Not used")
 
-    override suspend fun delete(asset: AssetRef): Boolean = error("Not used")
+    override suspend fun delete(asset: AssetRef): AssetDeleteResult = error("Not used")
 }
 
 private fun profile(): ProviderProfile {

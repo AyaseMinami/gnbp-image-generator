@@ -34,6 +34,7 @@ internal class GnbpAppGraph(
 
     val persistence: GnbpPersistence = GnbpPersistence.create(application)
     val referenceStore: ContentUriReferenceStore = ContentUriReferenceStore.create(application)
+    val generatedAssetStore: MediaStoreGeneratedAssetStore = MediaStoreGeneratedAssetStore.create(application)
     private val resultJournal = FileGenerationResultJournal.create(application)
     private val taskReferenceCleaner = TaskReferenceCleaner(
         persistence.tasks,
@@ -48,7 +49,7 @@ internal class GnbpAppGraph(
             taskRepository = persistence.tasks,
             completionRepository = persistence.generationCompletion,
             providerFactory = AndroidGenerationProviderFactory(application),
-            generatedAssetStore = MediaStoreGeneratedAssetStore.create(application),
+            generatedAssetStore = generatedAssetStore,
             referencePreparer = ReferencePreparer { asset ->
                 val durable = referenceStore.resolve(asset)
                     ?: return@ReferencePreparer ImagePreparationResult.Failed(

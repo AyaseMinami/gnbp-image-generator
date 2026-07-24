@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
             val generatedResults by generation.generatedResults.collectAsState()
             val settingsState by generation.settingsState.collectAsState()
             val taskManagementState by generation.taskManagementState.collectAsState()
+            val galleryManagementState by generation.galleryManagementState.collectAsState()
             val settingsActions = remember {
                 SettingsActions(
                     onNewProfile = generation::newProfile,
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity() {
                 state = generationState,
                 settingsState = settingsState,
                 taskManagementState = taskManagementState,
+                galleryManagementState = galleryManagementState,
                 settingsActions = settingsActions,
                 tasks = tasks,
                 generatedResults = generatedResults,
@@ -139,11 +141,15 @@ class MainActivity : ComponentActivity() {
                 onRetryTask = generation::retry,
                 onOpenResult = ::openResult,
                 onShareResult = ::shareResult,
+                onShareResults = ::shareResults,
                 onReuseResult = ::reuseResult,
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
+                onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
+                onDeleteResultsFromDevice = generation::deleteGeneratedResultsFromDevice,
                 onFeedbackShown = generation::clearFeedback,
                 onSettingsFeedbackShown = generation::clearSettingsFeedback,
                 onTaskManagementFeedbackShown = generation::clearTaskManagementFeedback,
+                onGalleryManagementFeedbackShown = generation::clearGalleryManagementFeedback,
             )
         }
         lifecycleScope.launch {
@@ -177,11 +183,19 @@ class MainActivity : ComponentActivity() {
             .onFailure { generation.resultUnavailable() }
     }
 
-    private fun shareResult(asset: GeneratedAssetReference) {
+    private fun shareResult(asset: GeneratedAssetReference) =
+        launchShare(asset.toAssetRef().shareIntent())
+
+    private fun shareResults(assets: List<GeneratedAssetReference>) {
+        if (assets.isEmpty()) return
+        launchShare(assets.map { asset -> asset.toAssetRef() }.shareIntent())
+    }
+
+    private fun launchShare(shareIntent: Intent) {
         runCatching {
             startActivity(
                 Intent.createChooser(
-                    asset.toAssetRef().shareIntent(),
+                    shareIntent,
                     getString(R.string.share_chooser_title),
                 ),
             )

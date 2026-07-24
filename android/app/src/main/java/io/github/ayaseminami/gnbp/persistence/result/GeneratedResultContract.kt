@@ -40,4 +40,6 @@ interface GeneratedResultRepository {
     suspend fun findResult(id: GeneratedResultId): GeneratedResult?
 
     suspend fun setFavorite(id: GeneratedResultId, favorite: Boolean): Boolean
+
+    suspend fun removeResults(ids: Set<GeneratedResultId>): Set<GeneratedResultId>
 }

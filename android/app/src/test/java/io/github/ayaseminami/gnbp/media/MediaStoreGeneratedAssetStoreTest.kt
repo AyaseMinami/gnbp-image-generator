@@ -85,6 +85,39 @@ class MediaStoreGeneratedAssetStoreTest {
     }
 
     @Test
+    fun `batch share grants every image URI and selects an honest MIME type`() {
+        val png = AssetRef(
+            id = MediaAssetId("png"),
+            uri = Uri.parse("content://media/external/images/1"),
+            displayName = "first.png",
+            mimeType = "image/png",
+            byteSize = 1,
+        )
+        val jpeg = AssetRef(
+            id = MediaAssetId("jpeg"),
+            uri = Uri.parse("content://media/external/images/2"),
+            displayName = "second.jpg",
+            mimeType = "image/jpeg",
+            byteSize = 1,
+        )
+
+        val sameType = listOf(png, png.copy(id = MediaAssetId("png-two"))).shareIntent()
+        val mixedType = listOf(png, jpeg).shareIntent()
+
+        assertEquals(Intent.ACTION_SEND_MULTIPLE, mixedType.action)
+        assertEquals("image/png", sameType.type)
+        assertEquals("image/*", mixedType.type)
+        assertEquals(
+            arrayListOf(png.uri, jpeg.uri),
+            mixedType.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java),
+        )
+        assertTrue(mixedType.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        assertEquals(2, mixedType.clipData?.itemCount)
+        assertEquals(png.uri, mixedType.clipData?.getItemAt(0)?.uri)
+        assertEquals(jpeg.uri, mixedType.clipData?.getItemAt(1)?.uri)
+    }
+
+    @Test
     fun `legacy storage requires permission and uses the pre-29 data path`() = runTest {
         val deniedGateway = FakeMediaStoreGateway()
         val denied = testStore(deniedGateway, Build.VERSION_CODES.P, hasPermission = false)
@@ -122,6 +155,27 @@ class MediaStoreGeneratedAssetStoreTest {
         )
         gateway.inputBytes = null
         assertEquals(AssetReadResult.ExternalAssetMissing, store.read(missing))
+    }
+
+    @Test
+    fun `delete distinguishes removed missing denied and failed media`() = runTest {
+        val gateway = FakeMediaStoreGateway()
+        val store = testStore(gateway, Build.VERSION_CODES.Q, hasPermission = true)
+        val asset = AssetRef(
+            id = MediaAssetId("generated"),
+            uri = gateway.insertUri,
+            displayName = "generated.png",
+            mimeType = "image/png",
+            byteSize = 1,
+        )
+
+        assertEquals(AssetDeleteResult.Deleted, store.delete(asset))
+        gateway.deleteResult = false
+        assertEquals(AssetDeleteResult.Missing, store.delete(asset))
+        gateway.deleteFailure = SecurityException("denied")
+        assertEquals(AssetDeleteResult.PermissionDenied, store.delete(asset))
+        gateway.deleteFailure = IllegalArgumentException("invalid URI")
+        assertEquals(AssetDeleteResult.Failed, store.delete(asset))
     }
 
     @Test
@@ -169,6 +223,8 @@ private class FakeMediaStoreGateway(
     var inputBytes: ByteArray? = null
     var published: Boolean = false
     var deleted: Boolean = false
+    var deleteResult: Boolean = true
+    var deleteFailure: RuntimeException? = null
 
     override fun insert(values: ContentValues): Uri {
         insertedValues = ContentValues(values)
@@ -185,8 +241,9 @@ private class FakeMediaStoreGateway(
     override fun openInput(uri: Uri): InputStream? = inputBytes?.let(::ByteArrayInputStream)
 
     override fun delete(uri: Uri): Boolean {
+        deleteFailure?.let { throw it }
         deleted = true
-        return true
+        return deleteResult
     }
 }
 
