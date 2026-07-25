@@ -146,7 +146,7 @@ class MainActivity : ComponentActivity() {
                 onShareResults = generation::shareGeneratedResults,
                 onReuseResult = ::reuseResult,
                 onCopyPrompt = ::copyPrompt,
-                onReusePrompt = generation::updatePrompt,
+                onReusePrompt = generation::reusePrompt,
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
                 onDeleteResultsFromDevice = generation::deleteGeneratedResultsFromDevice,

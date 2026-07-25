@@ -262,7 +262,7 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.tab_gallery)).performClick()
         compose.onNodeWithText("lighthouse").assertExists()
         compose.onNodeWithContentDescription(context.getString(R.string.more_result_actions)).performClick()
-        compose.onNodeWithContentDescription(context.getString(R.string.view_prompt_details)).performClick()
+        compose.onNodeWithText(context.getString(R.string.view_prompt_details)).performClick()
         compose.onNodeWithText(context.getString(R.string.result_prompt_details_title)).assertIsDisplayed()
         compose.onAllNodesWithText("lighthouse").assertCountEquals(2)
         compose.onNodeWithText(context.getString(R.string.copy_prompt)).performClick()

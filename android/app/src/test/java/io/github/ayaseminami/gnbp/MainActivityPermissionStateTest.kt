@@ -5,6 +5,8 @@ import androidx.test.core.app.ActivityScenario
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
 import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.media.ReferenceDraftViewModel
+import io.github.ayaseminami.gnbp.ui.generation.GenerationFeedback
+import io.github.ayaseminami.gnbp.ui.generation.GenerationViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -81,5 +83,21 @@ class MainActivityPermissionStateTest {
         assertEquals(listOf(listOf(reference)), submitted)
         assertNull(pendingSubmission)
         assertEquals(0, deniedCount)
+    }
+
+    @Test
+    fun `reusing a copied prompt preserves feedback while editing clears it`() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val generation = ViewModelProvider(activity)[GenerationViewModel::class.java]
+
+                generation.promptCopied()
+                generation.reusePrompt("lighthouse")
+                assertEquals(GenerationFeedback.PromptCopied, generation.uiState.value.feedback)
+
+                generation.updatePrompt("edited prompt")
+                assertNull(generation.uiState.value.feedback)
+            }
+        }
     }
 }
