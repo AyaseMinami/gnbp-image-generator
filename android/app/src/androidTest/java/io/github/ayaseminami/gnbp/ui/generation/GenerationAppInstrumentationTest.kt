@@ -722,8 +722,9 @@ class GenerationAppInstrumentationTest {
         compose.onNodeWithText(context.getString(R.string.settings_behavior_title)).assertExists()
 
         compose.onNodeWithText(context.getString(R.string.open_about)).performScrollTo().performClick()
-        compose.onNodeWithText(context.getString(R.string.about_app_name)).assertIsDisplayed()
-        compose.onNodeWithContentDescription(context.getString(R.string.navigate_back)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.navigate_back))
+            .assertIsDisplayed()
+            .performClick()
 
         compose.onNodeWithTag(SETTINGS_ADD_PROFILE_TEST_TAG).performScrollTo().performClick()
         compose.onNodeWithText(context.getString(R.string.profile_name_label)).performTextInput("Relay")
