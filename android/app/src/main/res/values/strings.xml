@@ -55,6 +55,10 @@
     <string name="gallery_thumbnail">生成结果缩略图</string>
     <string name="gallery_thumbnail_unavailable">缩略图不可用</string>
     <string name="gallery_favorites_only">仅收藏</string>
+    <string name="gallery_layout_large_grid">大图网格</string>
+    <string name="gallery_layout_compact_grid">紧凑网格</string>
+    <string name="gallery_layout_list">列表</string>
+    <string name="gallery_result_metadata">%1$s / %2$s</string>
     <string name="gallery_favorites_empty">还没有收藏的结果</string>
     <string name="favorite_result">收藏结果</string>
     <string name="unfavorite_result">取消收藏</string>

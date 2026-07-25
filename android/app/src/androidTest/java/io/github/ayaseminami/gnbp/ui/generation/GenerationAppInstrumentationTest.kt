@@ -6,12 +6,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -46,6 +48,7 @@ import io.github.ayaseminami.gnbp.media.MediaAssetId
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
+import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
@@ -63,6 +66,11 @@ import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementState
 import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_DELETE_SELECTED_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_COMPACT_GRID_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_LAYOUT_COMPACT_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_LAYOUT_LIST_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_LARGE_GRID_TEST_TAG
+import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_LIST_TEST_TAG
 import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_MORE_ACTIONS_TEST_TAG
 import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_REMOVE_SELECTED_TEST_TAG
 import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SELECTION_MODE_TEST_TAG
@@ -214,6 +222,7 @@ class GenerationAppInstrumentationTest {
                 onSetResultFavorite = { _, _ -> },
                 onRemoveResultsFromLibrary = {},
                 onDeleteResultsFromDevice = {},
+                onGalleryLayoutModeChange = {},
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
                 onTaskManagementFeedbackShown = {},
@@ -263,7 +272,9 @@ class GenerationAppInstrumentationTest {
             }
             GalleryScreen(
                 results = results,
+                layoutMode = GalleryLayoutMode.LargeGrid,
                 isWorking = false,
+                onLayoutModeChange = {},
                 onOpenResult = {},
                 onShareResult = {},
                 onShareResults = {},
@@ -280,7 +291,7 @@ class GenerationAppInstrumentationTest {
 
         compose.onNodeWithText("favorite prompt").assertIsDisplayed()
         compose.onNodeWithText("ordinary prompt").assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.gallery_favorites_only)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.gallery_favorites_only)).performClick()
         compose.onNodeWithText("favorite prompt").assertIsDisplayed()
         compose.onAllNodesWithText("ordinary prompt").assertCountEquals(0)
         compose.onNodeWithContentDescription(context.getString(R.string.unfavorite_result)).performClick()
@@ -295,7 +306,9 @@ class GenerationAppInstrumentationTest {
                 results = listOf(
                     generatedResult("missing", "recoverable prompt", favorite = false),
                 ),
+                layoutMode = GalleryLayoutMode.LargeGrid,
                 isWorking = false,
+                onLayoutModeChange = {},
                 onOpenResult = {},
                 onShareResult = {},
                 onShareResults = {},
@@ -307,9 +320,48 @@ class GenerationAppInstrumentationTest {
         }
 
         compose.onNodeWithText("recoverable prompt").assertIsDisplayed()
-        compose.onNodeWithContentDescription(
+        compose.onAllNodesWithContentDescription(
             context.getString(R.string.gallery_thumbnail_unavailable),
-        ).assertIsDisplayed()
+        ).assertCountEquals(1)
+    }
+
+    @Test
+    fun gallerySwitchesAllLayoutModesAndShowsSafeListMetadata() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        compose.setContent {
+            var layoutMode by remember { mutableStateOf(GalleryLayoutMode.LargeGrid) }
+            GalleryScreen(
+                results = listOf(
+                    generatedResult("favorite-layout", "favorite layout prompt", favorite = true),
+                    generatedResult("ordinary-layout", "ordinary layout prompt", favorite = false),
+                ),
+                layoutMode = layoutMode,
+                isWorking = false,
+                onLayoutModeChange = { selectedLayoutMode -> layoutMode = selectedLayoutMode },
+                onOpenResult = {},
+                onShareResult = {},
+                onShareResults = {},
+                onReuseResult = {},
+                onSetFavorite = { _, _ -> },
+                onRemoveFromLibrary = {},
+                onDeleteFromDevice = {},
+            )
+        }
+
+        compose.onNodeWithTag(GALLERY_LARGE_GRID_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(GALLERY_LAYOUT_COMPACT_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_COMPACT_GRID_TEST_TAG).assertIsDisplayed()
+        compose.onAllNodesWithContentDescription(
+            context.getString(R.string.gallery_thumbnail_unavailable),
+        ).assertCountEquals(2)
+        compose.onNodeWithContentDescription(context.getString(R.string.gallery_favorites_only)).performClick()
+        compose.onNodeWithText("favorite layout prompt").assertIsDisplayed()
+        compose.onAllNodesWithText("ordinary layout prompt").assertCountEquals(0)
+        compose.onNodeWithTag(GALLERY_LAYOUT_LIST_TEST_TAG).performClick()
+        compose.onNodeWithTag(GALLERY_LIST_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithText("Gemini / model").assertIsDisplayed()
+        compose.onNodeWithText("favorite layout prompt").assertIsDisplayed()
+        compose.onAllNodesWithText("ordinary layout prompt").assertCountEquals(0)
     }
 
     @Test
@@ -322,7 +374,9 @@ class GenerationAppInstrumentationTest {
         compose.setContent {
             GalleryScreen(
                 results = listOf(favorite, ordinary),
+                layoutMode = GalleryLayoutMode.LargeGrid,
                 isWorking = false,
+                onLayoutModeChange = {},
                 onOpenResult = {},
                 onShareResult = {},
                 onShareResults = shared::set,
@@ -333,7 +387,7 @@ class GenerationAppInstrumentationTest {
             )
         }
 
-        compose.onNodeWithText(context.getString(R.string.gallery_favorites_only)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.gallery_favorites_only)).performClick()
         compose.onNodeWithTag(GALLERY_SELECTION_MODE_TEST_TAG).performClick()
         compose.onNodeWithTag(GALLERY_SELECT_ALL_TEST_TAG).performClick()
         compose.onNodeWithTag(GALLERY_SHARE_SELECTED_TEST_TAG).performClick()
@@ -360,7 +414,9 @@ class GenerationAppInstrumentationTest {
         compose.setContent {
             GalleryScreen(
                 results = listOf(result),
+                layoutMode = GalleryLayoutMode.LargeGrid,
                 isWorking = false,
+                onLayoutModeChange = {},
                 onOpenResult = {},
                 onShareResult = {},
                 onShareResults = {},
@@ -549,6 +605,7 @@ class GenerationAppInstrumentationTest {
                 onSetResultFavorite = { _, _ -> },
                 onRemoveResultsFromLibrary = {},
                 onDeleteResultsFromDevice = {},
+                onGalleryLayoutModeChange = {},
                 onFeedbackShown = {},
                 onSettingsFeedbackShown = {},
                 onTaskManagementFeedbackShown = {},
