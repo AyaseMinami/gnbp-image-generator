@@ -471,6 +471,8 @@ class GenerationViewModel(
     fun updateCompletionNotifications(value: Boolean) =
         settingsCoordinator.updateCompletionNotifications(value)
     fun updateSoundNotification(value: Boolean) = settingsCoordinator.updateSoundNotification(value)
+    fun updateGalleryLayoutMode(value: io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode) =
+        settingsCoordinator.updateGalleryLayoutMode(value)
     fun notificationPermissionDenied() = settingsCoordinator.notificationPermissionDenied()
     fun clearSettingsFeedback() = settingsCoordinator.clearFeedback()
 

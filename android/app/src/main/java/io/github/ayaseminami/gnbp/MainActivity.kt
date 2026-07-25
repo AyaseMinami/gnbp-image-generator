@@ -146,6 +146,7 @@ class MainActivity : ComponentActivity() {
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
                 onDeleteResultsFromDevice = generation::deleteGeneratedResultsFromDevice,
+                onGalleryLayoutModeChange = generation::updateGalleryLayoutMode,
                 onFeedbackShown = generation::clearFeedback,
                 onSettingsFeedbackShown = generation::clearSettingsFeedback,
                 onTaskManagementFeedbackShown = generation::clearTaskManagementFeedback,

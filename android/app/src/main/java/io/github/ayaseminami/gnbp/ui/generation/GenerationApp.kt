@@ -83,6 +83,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
+import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.theme.GnbpTheme
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
@@ -146,6 +147,7 @@ fun GenerationApp(
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveResultsFromLibrary: (Set<GeneratedResultId>) -> Unit,
     onDeleteResultsFromDevice: (Set<GeneratedResultId>) -> Unit,
+    onGalleryLayoutModeChange: (GalleryLayoutMode) -> Unit,
     onFeedbackShown: () -> Unit,
     onSettingsFeedbackShown: () -> Unit,
     onTaskManagementFeedbackShown: () -> Unit,
@@ -245,7 +247,9 @@ fun GenerationApp(
                     )
                     AppSection.Gallery -> GalleryScreen(
                         results = generatedResults,
+                        layoutMode = settingsState.appSettings.galleryLayoutMode,
                         isWorking = galleryManagementState.isWorking,
+                        onLayoutModeChange = onGalleryLayoutModeChange,
                         onOpenResult = onOpenResult,
                         onShareResult = onShareResult,
                         onShareResults = onShareResults,

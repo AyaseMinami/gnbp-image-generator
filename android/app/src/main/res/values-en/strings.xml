@@ -56,6 +56,10 @@
     <string name="gallery_thumbnail">Generated result thumbnail</string>
     <string name="gallery_thumbnail_unavailable">Thumbnail unavailable</string>
     <string name="gallery_favorites_only">Favorites only</string>
+    <string name="gallery_layout_large_grid">Large grid</string>
+    <string name="gallery_layout_compact_grid">Compact grid</string>
+    <string name="gallery_layout_list">List</string>
+    <string name="gallery_result_metadata">%1$s / %2$s</string>
     <string name="gallery_favorites_empty">No favorite results yet</string>
     <string name="favorite_result">Favorite result</string>
     <string name="unfavorite_result">Remove from favorites</string>

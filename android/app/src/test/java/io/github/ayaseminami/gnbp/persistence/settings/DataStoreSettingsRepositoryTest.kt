@@ -60,6 +60,7 @@ class DataStoreSettingsRepositoryTest {
                 showPreview = false,
                 completionNotifications = false,
                 soundNotification = false,
+                galleryLayoutMode = GalleryLayoutMode.CompactGrid,
             ),
         )
         assertTrue(firstRepository.observeSettings().first().selectedProfileId == ProfileId("profile-1"))
@@ -80,6 +81,7 @@ class DataStoreSettingsRepositoryTest {
         assertFalse(reloaded.showPreview)
         assertFalse(reloaded.completionNotifications)
         assertFalse(reloaded.soundNotification)
+        assertEquals(GalleryLayoutMode.CompactGrid, reloaded.galleryLayoutMode)
         secondJob.cancelAndJoin()
     }
 
@@ -108,7 +110,30 @@ class DataStoreSettingsRepositoryTest {
             migrated.completionNotifications,
         )
         assertEquals(AppSettings.DEFAULT_SOUND_NOTIFICATION, migrated.soundNotification)
+        assertEquals(AppSettings.DEFAULT_GALLERY_LAYOUT_MODE, migrated.galleryLayoutMode)
         migratedJob.cancelAndJoin()
+    }
+
+    @Test
+    fun `unknown persisted gallery layout falls back without terminating settings`() = runTest {
+        val storage = InMemoryPreferencesStorage(
+            mutablePreferencesOf(
+                SettingsKeys.SCHEMA_VERSION to SettingsDataMigration.CURRENT_SCHEMA_VERSION,
+                SettingsKeys.GALLERY_LAYOUT_MODE to "future-layout",
+            ),
+        )
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val store = DataStoreFactory.create(
+            storage = storage,
+            scope = scope,
+            migrations = listOf(SettingsDataMigration()),
+        )
+
+        val settings = DataStoreSettingsRepository(store).observeSettings().first()
+
+        assertEquals(AppSettings.DEFAULT_GALLERY_LAYOUT_MODE, settings.galleryLayoutMode)
+        job.cancelAndJoin()
     }
 
     @Test

@@ -15,6 +15,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
+enum class GalleryLayoutMode {
+    LargeGrid,
+    CompactGrid,
+    List,
+}
+
 data class AppSettings(
     val selectedProfileId: ProfileId? = null,
     val selectedPromptId: PromptId? = null,
@@ -23,6 +29,7 @@ data class AppSettings(
     val showPreview: Boolean = DEFAULT_SHOW_PREVIEW,
     val completionNotifications: Boolean = DEFAULT_COMPLETION_NOTIFICATIONS,
     val soundNotification: Boolean = DEFAULT_SOUND_NOTIFICATION,
+    val galleryLayoutMode: GalleryLayoutMode = DEFAULT_GALLERY_LAYOUT_MODE,
 ) {
     init {
         require(batchCount in 1..MAX_BATCH_COUNT) { "Batch count must be between 1 and $MAX_BATCH_COUNT" }
@@ -35,7 +42,7 @@ data class AppSettings(
         "AppSettings(selectedProfileId=[REDACTED], selectedPromptId=[REDACTED], " +
             "batchCount=$batchCount, maxConcurrency=$maxConcurrency, showPreview=$showPreview, " +
             "completionNotifications=$completionNotifications, " +
-            "soundNotification=$soundNotification)"
+            "soundNotification=$soundNotification, galleryLayoutMode=$galleryLayoutMode)"
 
     companion object {
         const val DEFAULT_BATCH_COUNT = 1
@@ -43,6 +50,7 @@ data class AppSettings(
         const val DEFAULT_SHOW_PREVIEW = true
         const val DEFAULT_COMPLETION_NOTIFICATIONS = false
         const val DEFAULT_SOUND_NOTIFICATION = true
+        val DEFAULT_GALLERY_LAYOUT_MODE = GalleryLayoutMode.LargeGrid
         const val MAX_BATCH_COUNT = 16
         const val MAX_CONCURRENCY = 2
     }
@@ -74,6 +82,7 @@ class DataStoreSettingsRepository(
             preferences[SettingsKeys.SHOW_PREVIEW] = settings.showPreview
             preferences[SettingsKeys.COMPLETION_NOTIFICATIONS] = settings.completionNotifications
             preferences[SettingsKeys.SOUND_NOTIFICATION] = settings.soundNotification
+            preferences[SettingsKeys.GALLERY_LAYOUT_MODE] = settings.galleryLayoutMode.name
             preferences[SettingsKeys.SCHEMA_VERSION] = SettingsDataMigration.CURRENT_SCHEMA_VERSION
         }
     }
@@ -86,7 +95,8 @@ class SettingsDataMigration : DataMigration<Preferences> {
             currentData[SettingsKeys.MAX_CONCURRENCY] == null ||
             currentData[SettingsKeys.SHOW_PREVIEW] == null ||
             currentData[SettingsKeys.COMPLETION_NOTIFICATIONS] == null ||
-            currentData[SettingsKeys.SOUND_NOTIFICATION] == null
+            currentData[SettingsKeys.SOUND_NOTIFICATION] == null ||
+            currentData[SettingsKeys.GALLERY_LAYOUT_MODE] == null
 
     override suspend fun migrate(currentData: Preferences): Preferences =
         currentData.toMutablePreferences().apply {
@@ -106,13 +116,16 @@ class SettingsDataMigration : DataMigration<Preferences> {
             if (this[SettingsKeys.SOUND_NOTIFICATION] == null) {
                 this[SettingsKeys.SOUND_NOTIFICATION] = AppSettings.DEFAULT_SOUND_NOTIFICATION
             }
+            if (this[SettingsKeys.GALLERY_LAYOUT_MODE] == null) {
+                this[SettingsKeys.GALLERY_LAYOUT_MODE] = AppSettings.DEFAULT_GALLERY_LAYOUT_MODE.name
+            }
             this[SettingsKeys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
         }
 
     override suspend fun cleanUp() = Unit
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 2
+        const val CURRENT_SCHEMA_VERSION = 3
     }
 }
 
@@ -125,6 +138,7 @@ internal object SettingsKeys {
     val SHOW_PREVIEW = booleanPreferencesKey("show_preview")
     val COMPLETION_NOTIFICATIONS = booleanPreferencesKey("completion_notifications")
     val SOUND_NOTIFICATION = booleanPreferencesKey("sound_notification")
+    val GALLERY_LAYOUT_MODE = stringPreferencesKey("gallery_layout_mode")
 }
 
 private fun Preferences.toAppSettings(): AppSettings = AppSettings(
@@ -138,4 +152,7 @@ private fun Preferences.toAppSettings(): AppSettings = AppSettings(
     completionNotifications = this[SettingsKeys.COMPLETION_NOTIFICATIONS]
         ?: AppSettings.DEFAULT_COMPLETION_NOTIFICATIONS,
     soundNotification = this[SettingsKeys.SOUND_NOTIFICATION] ?: AppSettings.DEFAULT_SOUND_NOTIFICATION,
+    galleryLayoutMode = this[SettingsKeys.GALLERY_LAYOUT_MODE]
+        ?.let { raw -> GalleryLayoutMode.entries.firstOrNull { mode -> mode.name == raw } }
+        ?: AppSettings.DEFAULT_GALLERY_LAYOUT_MODE,
 )

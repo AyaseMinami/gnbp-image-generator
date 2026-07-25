@@ -10,6 +10,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptRepository
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
+import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
@@ -111,6 +112,7 @@ class SettingsCoordinatorTest {
         coordinator.updateShowPreview(false)
         coordinator.updateCompletionNotifications(false)
         coordinator.updateSoundNotification(false)
+        coordinator.updateGalleryLayoutMode(GalleryLayoutMode.List)
         runCurrent()
 
         assertEquals("Portrait", prompts.values.single().name)
@@ -119,6 +121,24 @@ class SettingsCoordinatorTest {
         assertFalse(settings.value.showPreview)
         assertFalse(settings.value.completionNotifications)
         assertFalse(settings.value.soundNotification)
+        assertEquals(GalleryLayoutMode.List, settings.value.galleryLayoutMode)
+    }
+
+    @Test
+    fun `gallery layout applies immediately and restores for a recreated coordinator`() = runTest {
+        val settings = FakeSettingsRepository()
+        val first = coordinator(settings = settings)
+        runCurrent()
+
+        first.updateGalleryLayoutMode(GalleryLayoutMode.CompactGrid)
+        runCurrent()
+
+        assertEquals(GalleryLayoutMode.CompactGrid, first.state.value.appSettings.galleryLayoutMode)
+
+        val recreated = coordinator(settings = settings)
+        runCurrent()
+
+        assertEquals(GalleryLayoutMode.CompactGrid, recreated.state.value.appSettings.galleryLayoutMode)
     }
 
     @Test

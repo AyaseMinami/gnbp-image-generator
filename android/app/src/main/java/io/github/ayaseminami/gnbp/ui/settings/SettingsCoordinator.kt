@@ -9,6 +9,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptRepository
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
+import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkMode
@@ -357,6 +358,10 @@ class SettingsCoordinator(
 
     fun updateSoundNotification(value: Boolean) = updateSettings {
         it.copy(soundNotification = value)
+    }
+
+    fun updateGalleryLayoutMode(value: GalleryLayoutMode) = updateSettings {
+        it.copy(galleryLayoutMode = value)
     }
 
     fun notificationPermissionDenied() {
