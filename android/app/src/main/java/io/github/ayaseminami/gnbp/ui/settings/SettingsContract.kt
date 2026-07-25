@@ -5,6 +5,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
+import io.github.ayaseminami.gnbp.ui.about.AboutDestination
 
 enum class ProfileTransportChoice {
     VerifiedTls,
@@ -79,6 +80,7 @@ enum class SettingsFailure {
     InvalidPrompt,
     StorageUnavailable,
     NotificationPermissionDenied,
+    BrowserUnavailable,
 }
 
 sealed interface SettingsFeedback {
@@ -130,4 +132,5 @@ class SettingsActions(
     val onUpdateShowPreview: (Boolean) -> Unit,
     val onUpdateCompletionNotifications: (Boolean) -> Unit,
     val onUpdateSoundNotification: (Boolean) -> Unit,
+    val onOpenAboutDestination: (AboutDestination) -> Unit,
 )

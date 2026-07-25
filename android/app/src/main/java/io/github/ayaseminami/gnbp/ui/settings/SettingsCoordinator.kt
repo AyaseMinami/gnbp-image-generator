@@ -385,6 +385,10 @@ class SettingsCoordinator(
         }
     }
 
+    fun browserUnavailable() {
+        fail(SettingsFailure.BrowserUnavailable)
+    }
+
     fun clearFeedback() {
         mutableState.update { it.copy(feedback = null) }
     }

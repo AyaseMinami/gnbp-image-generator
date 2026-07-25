@@ -721,6 +721,11 @@ class GenerationAppInstrumentationTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText(context.getString(R.string.settings_behavior_title)).assertExists()
 
+        compose.onNodeWithText(context.getString(R.string.open_about)).performScrollTo().performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.navigate_back))
+            .assertIsDisplayed()
+            .performClick()
+
         compose.onNodeWithTag(SETTINGS_ADD_PROFILE_TEST_TAG).performScrollTo().performClick()
         compose.onNodeWithText(context.getString(R.string.profile_name_label)).performTextInput("Relay")
         compose.onNodeWithText(context.getString(R.string.model_label)).performTextInput("image-model")
@@ -810,6 +815,7 @@ private fun noOpSettingsActions(
     onUpdateShowPreview = {},
     onUpdateCompletionNotifications = {},
     onUpdateSoundNotification = {},
+    onOpenAboutDestination = {},
 )
 
 private class InstrumentedTaskRepository : GenerationTaskRepository {

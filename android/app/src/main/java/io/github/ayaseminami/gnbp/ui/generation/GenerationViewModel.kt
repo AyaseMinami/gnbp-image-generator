@@ -484,6 +484,7 @@ class GenerationViewModel(
     fun updateGalleryLayoutMode(value: io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode) =
         settingsCoordinator.updateGalleryLayoutMode(value)
     fun notificationPermissionDenied() = settingsCoordinator.notificationPermissionDenied()
+    fun browserUnavailable() = settingsCoordinator.browserUnavailable()
     fun clearSettingsFeedback() = settingsCoordinator.clearFeedback()
 
     fun permissionDenied() {

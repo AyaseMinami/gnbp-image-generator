@@ -1088,6 +1088,7 @@ private fun settingsFeedbackText(feedback: SettingsFeedback): String? = when (fe
             SettingsFailure.StorageUnavailable -> R.string.settings_error_storage
             SettingsFailure.NotificationPermissionDenied ->
                 R.string.settings_error_notification_permission
+            SettingsFailure.BrowserUnavailable -> R.string.settings_error_browser_unavailable
         },
     )
 }
