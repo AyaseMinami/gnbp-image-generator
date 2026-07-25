@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -62,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.pluralStringResource
@@ -72,9 +74,6 @@ import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskStatus
-import io.github.ayaseminami.gnbp.generation.TaskFailureReason
-import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
-import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
 import io.github.ayaseminami.gnbp.generation.GeneratedAssetReference
 import io.github.ayaseminami.gnbp.media.DurableReferenceAsset
 import io.github.ayaseminami.gnbp.media.MediaAssetId
@@ -145,6 +144,7 @@ fun GenerationApp(
     onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
     onCopyPrompt: (String) -> Unit,
+    onCopyTaskDiagnostic: (String) -> Unit,
     onReusePrompt: (String) -> Unit,
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveResultsFromLibrary: (Set<GeneratedResultId>) -> Unit,
@@ -246,6 +246,7 @@ fun GenerationApp(
                         onDeleteTasks = onDeleteTasks,
                         onRetryTask = onRetryTask,
                         onOpenResult = onOpenResult,
+                        onCopyTaskDiagnostic = onCopyTaskDiagnostic,
                     )
                     AppSection.Gallery -> GalleryScreen(
                         results = generatedResults,
@@ -566,6 +567,7 @@ internal fun TasksScreen(
     onDeleteTasks: (Set<TaskId>) -> Unit,
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
+    onCopyTaskDiagnostic: (String) -> Unit,
 ) {
     var uncertainRetryTaskId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectionMode by rememberSaveable { mutableStateOf(false) }
@@ -656,6 +658,7 @@ internal fun TasksScreen(
                             }
                         },
                         onOpenResult = onOpenResult,
+                        onCopyTaskDiagnostic = onCopyTaskDiagnostic,
                     )
                 }
             }
@@ -827,7 +830,9 @@ private fun TaskCard(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
+    onCopyTaskDiagnostic: (String) -> Unit,
 ) {
+    val diagnostic = LocalContext.current.taskDiagnosticSummary(task.status)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -870,7 +875,22 @@ private fun TaskCard(
                             contentDescription = stringResource(R.string.cancel_task),
                         )
                     }
-                    is TaskStatus.Failed,
+                    is TaskStatus.Failed -> {
+                        diagnostic?.let { summary ->
+                            IconButton(onClick = { onCopyTaskDiagnostic(summary) }) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = stringResource(R.string.copy_task_diagnostic),
+                                )
+                            }
+                        }
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.retry_task),
+                            )
+                        }
+                    }
                     is TaskStatus.Cancelled,
                     is TaskStatus.OutcomeUnknown,
                     -> IconButton(onClick = onRetry) {
@@ -917,9 +937,9 @@ private fun TaskCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            taskDiagnostic(task.status)?.let { diagnostic ->
+            diagnostic?.let { summary ->
                 Text(
-                    text = diagnostic,
+                    text = summary,
                     color = if (
                         task.status is TaskStatus.Failed ||
                         task.status is TaskStatus.OutcomeUnknown
@@ -1000,40 +1020,6 @@ private fun taskStatusColor(status: TaskStatus): Color = when (status) {
 }
 
 @Composable
-private fun taskDiagnostic(status: TaskStatus): String? = when (status) {
-    is TaskStatus.Failed -> stringResource(
-        when (status.reason) {
-            TaskFailureReason.ProviderUnavailable -> R.string.task_error_provider_unavailable
-            TaskFailureReason.InvalidRequest -> R.string.task_error_invalid_request
-            TaskFailureReason.Blocked -> R.string.task_error_blocked
-            TaskFailureReason.HttpStatus -> R.string.task_error_http_status
-            TaskFailureReason.Transport -> R.string.task_error_transport
-            TaskFailureReason.MalformedResponse -> R.string.task_error_malformed_response
-            TaskFailureReason.NoImageData -> R.string.task_error_no_image
-            TaskFailureReason.ReferenceUnavailable -> R.string.task_error_reference_unavailable
-            TaskFailureReason.AssetSaveFailed -> R.string.task_error_save_failed
-        },
-    )
-    is TaskStatus.Cancelled -> stringResource(
-        when (status.reason) {
-            TaskCancellationReason.UserRequested -> R.string.task_cancelled_by_user
-            TaskCancellationReason.ProcessInterruptedBeforeStart ->
-                R.string.task_cancelled_process_interrupted
-        },
-    )
-    is TaskStatus.OutcomeUnknown -> stringResource(
-        when (status.reason) {
-            TaskOutcomeUnknownReason.ProviderResponseUnknown -> R.string.task_unknown_provider
-            TaskOutcomeUnknownReason.ProcessInterrupted -> R.string.task_unknown_process_interrupted
-        },
-    )
-    TaskStatus.Queued,
-    TaskStatus.Running,
-    is TaskStatus.Succeeded,
-    -> null
-}
-
-@Composable
 private fun feedbackText(feedback: GenerationFeedback): String = when (feedback) {
     is GenerationFeedback.Queued -> pluralStringResource(
         R.plurals.feedback_tasks_queued,
@@ -1049,6 +1035,7 @@ private fun feedbackText(feedback: GenerationFeedback): String = when (feedback)
     GenerationFeedback.PermissionDenied -> stringResource(R.string.feedback_permission_denied)
     GenerationFeedback.ResultUnavailable -> stringResource(R.string.feedback_result_unavailable)
     GenerationFeedback.PromptCopied -> stringResource(R.string.feedback_prompt_copied)
+    GenerationFeedback.DiagnosticCopied -> stringResource(R.string.feedback_diagnostic_copied)
 }
 
 @Composable

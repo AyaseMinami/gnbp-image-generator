@@ -9,6 +9,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationProviderKind
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.ReferenceAssetSnapshot
 import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
+import io.github.ayaseminami.gnbp.generation.TaskFailureDiagnostic
 import io.github.ayaseminami.gnbp.generation.TaskFailureReason
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
@@ -34,6 +35,74 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RoomGenerationTaskRepositoryTest {
+    @Test
+    fun `safe HTTP failure diagnostic survives a database restart`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "gnbp-diagnostic-restart-${System.nanoTime()}.db"
+        val diagnostic = TaskFailureDiagnostic(
+            httpStatusCode = 524,
+            providerMessage = "Upstream request timed out",
+        )
+        val failed = generationTask(
+            "http-failed",
+            TaskStatus.Failed(TaskFailureReason.HttpStatus, diagnostic),
+        )
+
+        openDatabase(context, databaseName).let { database ->
+            try {
+                RoomGenerationTaskRepository(database.taskDao()).insertTasks(listOf(failed))
+            } finally {
+                database.close()
+            }
+        }
+
+        openDatabase(context, databaseName).let { database ->
+            try {
+                assertEquals(
+                    failed,
+                    RoomGenerationTaskRepository(database.taskDao()).findTask(failed.id),
+                )
+                val entityText = database.taskDao().findById(failed.id.value).toString()
+                assertFalse(entityText.contains("Upstream request timed out"))
+                assertTrue(entityText.contains("failureDiagnostic=[REDACTED]"))
+            } finally {
+                database.close()
+            }
+        }
+        assertTrue(context.deleteDatabase(databaseName))
+    }
+
+    @Test
+    fun `invalid persisted failure diagnostic degrades without hiding its task`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repository = RoomGenerationTaskRepository(database.taskDao())
+            val failed = generationTask(
+                "invalid-diagnostic",
+                TaskStatus.Failed(
+                    TaskFailureReason.HttpStatus,
+                    TaskFailureDiagnostic(524, "Upstream request timed out"),
+                ),
+            )
+            repository.insertTasks(listOf(failed))
+            database.openHelper.writableDatabase.execSQL(
+                "UPDATE generation_tasks " +
+                    "SET failure_http_status = 999, failure_provider_message = ? WHERE id = ?",
+                arrayOf("unsafe\nmessage", failed.id.value),
+            )
+
+            assertEquals(
+                failed.copy(status = TaskStatus.Failed(TaskFailureReason.HttpStatus)),
+                repository.findTask(failed.id),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     @Test
     fun `task summaries and terminal results survive a database restart`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()

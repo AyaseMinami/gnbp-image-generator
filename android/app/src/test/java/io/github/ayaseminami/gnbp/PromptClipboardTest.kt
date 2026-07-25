@@ -27,4 +27,19 @@ class PromptClipboardTest {
         assertEquals(context.getString(R.string.prompt_label), clip.description.label)
         assertEquals(prompt, clip.getItemAt(0).coerceToText(context).toString())
     }
+
+    @Test
+    fun `copy diagnostic writes only the localized safe summary to clipboard`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val summary = "Provider returned HTTP 524: Upstream request timed out"
+
+        copyTaskDiagnosticToClipboard(context, summary)
+
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        val clip = clipboard.primaryClip
+        assertNotNull(clip)
+        assertEquals(1, clip!!.itemCount)
+        assertEquals(context.getString(R.string.task_diagnostic_label), clip.description.label)
+        assertEquals(summary, clip.getItemAt(0).coerceToText(context).toString())
+    }
 }

@@ -14,6 +14,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class GeminiProvider(
     private val transport: ProviderHttpTransport,
@@ -55,14 +57,17 @@ class GeminiProvider(
             is ProviderHttpResult.Failure -> ImageGenerationResult.Failure(
                 ProviderError.Transport(response.error),
             )
-            is ProviderHttpResult.Response -> parseResponse(response)
+            is ProviderHttpResult.Response -> parseResponse(response, request.prompt)
         }
     }
 
-    private fun parseResponse(response: ProviderHttpResult.Response): ImageGenerationResult {
+    private fun parseResponse(
+        response: ProviderHttpResult.Response,
+        prompt: String,
+    ): ImageGenerationResult {
         if (response.statusCode !in 200..299) {
             return ImageGenerationResult.Failure(
-                ProviderError.HttpStatus(response.statusCode, response.body.sanitizedProviderMessage(apiKey)),
+                ProviderError.HttpStatus(response.statusCode, response.body.geminiProviderMessage(prompt)),
             )
         }
         val payload = try {
@@ -88,6 +93,22 @@ class GeminiProvider(
             )
         }
         return ImageGenerationResult.Success(GeneratedImage(bytes, image.mimeType))
+    }
+
+    private fun ByteArray.geminiProviderMessage(prompt: String): String? {
+        val structuredMessage = runCatching {
+            json.parseToJsonElement(decodeToString()).jsonObject["error"]
+                ?.jsonObject
+                ?.get("message")
+                ?.jsonPrimitive
+                ?.content
+        }.getOrNull() ?: return null
+        return sanitizeProviderMessage(
+            value = structuredMessage,
+            apiKey = apiKey,
+            requestPrompt = prompt,
+            endpointHost = binding.endpoint.authority.asciiHost,
+        )
     }
 
     private fun ImageGenerationRequest.toGeminiBody(

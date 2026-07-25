@@ -6,6 +6,7 @@ import io.github.ayaseminami.gnbp.generation.GenerationCompletionRepository
 import io.github.ayaseminami.gnbp.generation.GenerationTask
 import io.github.ayaseminami.gnbp.generation.GenerationTaskRepository
 import io.github.ayaseminami.gnbp.generation.TaskCancellationReason
+import io.github.ayaseminami.gnbp.generation.TaskFailureDiagnostic
 import io.github.ayaseminami.gnbp.generation.TaskFailureReason
 import io.github.ayaseminami.gnbp.generation.TaskId
 import io.github.ayaseminami.gnbp.generation.TaskOutcomeUnknownReason
@@ -90,6 +91,7 @@ class RoomGenerationTaskRepository internal constructor(
             else -> null
         }
         val asset = (status as? TaskStatus.Succeeded)?.asset
+        val failureDiagnostic = (status as? TaskStatus.Failed)?.diagnostic
         return GenerationTaskEntity(
             id = id.value,
             requestJson = TaskRequestJsonCodec.encode(request),
@@ -104,11 +106,21 @@ class RoomGenerationTaskRepository internal constructor(
             resultDisplayName = asset?.displayName,
             resultMimeType = asset?.mimeType,
             resultByteSize = asset?.byteSize,
+            failureHttpStatus = failureDiagnostic?.httpStatusCode,
+            failureProviderMessage = failureDiagnostic?.providerMessage,
         )
     }
 
     private fun GenerationTaskEntity.toTask(): GenerationTask {
         val request = TaskRequestJsonCodec.decode(requestJson)
+        val failureDiagnostic = if (failureHttpStatus != null || failureProviderMessage != null) {
+            TaskFailureDiagnostic.fromUntrusted(
+                httpStatusCode = failureHttpStatus,
+                providerMessage = failureProviderMessage,
+            )
+        } else {
+            null
+        }
         val taskStatus = when (status) {
             "QUEUED" -> TaskStatus.Queued
             "RUNNING" -> TaskStatus.Running
@@ -123,6 +135,7 @@ class RoomGenerationTaskRepository internal constructor(
             )
             "FAILED" -> TaskStatus.Failed(
                 TaskFailureReason.valueOf(requireNotNull(terminalReason)),
+                failureDiagnostic,
             )
             "CANCELLED" -> TaskStatus.Cancelled(
                 TaskCancellationReason.valueOf(requireNotNull(terminalReason)),

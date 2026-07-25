@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GenerationTaskEntity::class,
         GeneratedResultEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class GnbpDatabase : RoomDatabase() {
@@ -133,11 +133,19 @@ abstract class GnbpDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generation_tasks ADD COLUMN failure_http_status INTEGER")
+                db.execSQL("ALTER TABLE generation_tasks ADD COLUMN failure_provider_message TEXT")
+            }
+        }
+
         internal val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
             MIGRATION_4_5,
+            MIGRATION_5_6,
         )
     }
 }

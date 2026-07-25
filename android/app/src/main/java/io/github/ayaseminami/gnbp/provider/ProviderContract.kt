@@ -92,27 +92,41 @@ sealed interface ProviderError {
     data class InvalidRequest(
         val reason: String,
         override val certainty: DeliveryCertainty = DeliveryCertainty.NotSent,
-    ) : ProviderError
+    ) : ProviderError {
+        override fun toString(): String =
+            "InvalidRequest(reason=[REDACTED], certainty=$certainty)"
+    }
 
     data class Blocked(
         val reason: String,
         override val certainty: DeliveryCertainty = DeliveryCertainty.Responded,
-    ) : ProviderError
+    ) : ProviderError {
+        override fun toString(): String = "Blocked(reason=[REDACTED], certainty=$certainty)"
+    }
 
     data class HttpStatus(
         val statusCode: Int,
         val providerMessage: String?,
         override val certainty: DeliveryCertainty = DeliveryCertainty.Responded,
-    ) : ProviderError
+    ) : ProviderError {
+        override fun toString(): String =
+            "HttpStatus(statusCode=$statusCode, providerMessage=[REDACTED], certainty=$certainty)"
+    }
 
     data class Transport(val failure: TransportFailure) : ProviderError {
         override val certainty: DeliveryCertainty = failure.certainty
+
+        override fun toString(): String =
+            "Transport(failure=${failure::class.simpleName}, certainty=$certainty)"
     }
 
     data class MalformedResponse(
         val reason: String,
         override val certainty: DeliveryCertainty = DeliveryCertainty.Responded,
-    ) : ProviderError
+    ) : ProviderError {
+        override fun toString(): String =
+            "MalformedResponse(reason=[REDACTED], certainty=$certainty)"
+    }
 
     data object NoImageData : ProviderError {
         override val certainty: DeliveryCertainty = DeliveryCertainty.Responded
@@ -134,28 +148,57 @@ interface ImageGenerationProvider {
     ): ImageGenerationResult
 }
 
-internal fun sanitizeProviderText(
+internal fun sanitizeProviderMessage(
     value: String,
     apiKey: ApiKey,
+    requestPrompt: String,
+    endpointHost: String,
 ): String? {
     val rawKey = apiKey.reveal()
-    val encodedKeys = setOf(
-        URLEncoder.encode(rawKey, StandardCharsets.UTF_8.name()),
+    val promptWithoutUrls = HTTP_URL_PATTERN.replace(requestPrompt, REDACTED_URL)
+    val sensitiveVariants = buildSet {
+        add(rawKey)
+        addAll(
+            listOf(requestPrompt, promptWithoutUrls, endpointHost)
+                .filter(String::isNotBlank),
+        )
+        add(URLEncoder.encode(rawKey, StandardCharsets.UTF_8.name()))
         HttpUrl.Builder()
             .scheme("https")
             .host("redaction.invalid")
             .addQueryParameter("key", rawKey)
             .build()
             .encodedQuery
-            ?.substringAfter('='),
-    ).filterNotNull()
-    return encodedKeys
-        .fold(value.replace(rawKey, "[REDACTED]")) { sanitized, encodedKey ->
-            sanitized.replace(encodedKey, "[REDACTED]", ignoreCase = true)
+            ?.substringAfter('=')
+            ?.let(::add)
+    }.sortedByDescending(String::length)
+    val withoutUrls = HTTP_URL_PATTERN.replace(value, REDACTED_URL)
+    val withoutSensitiveValues = sensitiveVariants.fold(withoutUrls) { sanitized, sensitiveValue ->
+        sanitized.replace(sensitiveValue, "[REDACTED]", ignoreCase = true)
+    }
+    return withoutSensitiveValues
+        .map { character ->
+            if (character.isUnsafeProviderMessageCharacter()) ' ' else character
         }
-        .take(200)
+        .joinToString(separator = "")
+        .replace(WHITESPACE_PATTERN, " ")
+        .trim()
+        .take(MAX_PROVIDER_MESSAGE_LENGTH)
+        .withoutTrailingHighSurrogate()
+        .trimEnd()
         .ifBlank { null }
 }
 
-internal fun ByteArray.sanitizedProviderMessage(apiKey: ApiKey): String? =
-    sanitizeProviderText(decodeToString(), apiKey)
+internal const val MAX_PROVIDER_MESSAGE_LENGTH = 200
+
+internal fun Char.isUnsafeProviderMessageCharacter(): Boolean =
+    isISOControl() ||
+        (this != ' ' && (isWhitespace() || Character.isSpaceChar(this))) ||
+        Character.getType(this) == Character.FORMAT.toInt()
+
+private fun String.withoutTrailingHighSurrogate(): String =
+    if (lastOrNull()?.let { Character.isHighSurrogate(it) } == true) dropLast(1) else this
+
+private val HTTP_URL_PATTERN = Regex("(?i)\\bhttps?://[^\\s<>\\\"']+")
+private val WHITESPACE_PATTERN = Regex("\\s+")
+private const val REDACTED_URL = "[REDACTED_URL]"

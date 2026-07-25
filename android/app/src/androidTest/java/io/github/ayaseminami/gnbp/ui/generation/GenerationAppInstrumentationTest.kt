@@ -225,6 +225,7 @@ class GenerationAppInstrumentationTest {
                 onShareResults = {},
                 onReuseResult = { reuseInvoked.set(true) },
                 onCopyPrompt = copiedPrompt::set,
+                onCopyTaskDiagnostic = {},
                 onReusePrompt = {
                     reusedPrompt.set(it)
                     state = state.copy(prompt = it)
@@ -514,6 +515,7 @@ class GenerationAppInstrumentationTest {
                 onDeleteTasks = requestedDeletion::set,
                 onRetryTask = {},
                 onOpenResult = {},
+                onCopyTaskDiagnostic = {},
             )
         }
 
@@ -541,6 +543,7 @@ class GenerationAppInstrumentationTest {
                 onDeleteTasks = requestedDeletion::set,
                 onRetryTask = {},
                 onOpenResult = {},
+                onCopyTaskDiagnostic = {},
             )
         }
 
@@ -555,6 +558,39 @@ class GenerationAppInstrumentationTest {
     }
 
     @Test
+    fun failedTaskCopiesTheDisplayedSafeHttpDiagnostic() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val copied = AtomicReference<String?>(null)
+        val status = TaskStatus.Failed(
+            reason = io.github.ayaseminami.gnbp.generation.TaskFailureReason.HttpStatus,
+            diagnostic = io.github.ayaseminami.gnbp.generation.TaskFailureDiagnostic(
+                httpStatusCode = 524,
+                providerMessage = "Upstream request timed out",
+            ),
+        )
+        compose.setContent {
+            TasksScreen(
+                tasks = listOf(uiTask("http-failed", status)),
+                isDeleting = false,
+                onCancelTasks = {},
+                onDeleteTasks = {},
+                onRetryTask = {},
+                onOpenResult = {},
+                onCopyTaskDiagnostic = copied::set,
+            )
+        }
+
+        val expected = context.taskDiagnosticSummary(status)!!
+        compose.onNodeWithText(expected).assertIsDisplayed()
+        compose.onNodeWithContentDescription(context.getString(R.string.copy_task_diagnostic))
+            .performClick()
+        compose.waitUntil(timeoutMillis = 2_000) { copied.get() != null }
+
+        assertTrue(copied.get()!!.contains("524"))
+        assertEquals(expected, copied.get())
+    }
+
+    @Test
     fun tasksSelectionCanDeleteOneIndividuallySelectedTask() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val requestedDeletion = AtomicReference<Set<TaskId>>(emptySet())
@@ -566,6 +602,7 @@ class GenerationAppInstrumentationTest {
                 onDeleteTasks = requestedDeletion::set,
                 onRetryTask = {},
                 onOpenResult = {},
+                onCopyTaskDiagnostic = {},
             )
         }
 
@@ -589,6 +626,7 @@ class GenerationAppInstrumentationTest {
                 onDeleteTasks = {},
                 onRetryTask = {},
                 onOpenResult = {},
+                onCopyTaskDiagnostic = {},
             )
         }
 
@@ -665,6 +703,7 @@ class GenerationAppInstrumentationTest {
                 onShareResults = {},
                 onReuseResult = {},
                 onCopyPrompt = {},
+                onCopyTaskDiagnostic = {},
                 onReusePrompt = {},
                 onSetResultFavorite = { _, _ -> },
                 onRemoveResultsFromLibrary = {},

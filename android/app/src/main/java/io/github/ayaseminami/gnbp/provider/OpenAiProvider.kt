@@ -74,7 +74,7 @@ class OpenAiProvider(
             is ProviderHttpResult.Failure -> ImageGenerationResult.Failure(
                 ProviderError.Transport(response.error),
             )
-            is ProviderHttpResult.Response -> parseResponse(response)
+            is ProviderHttpResult.Response -> parseResponse(response, request.prompt)
         }
     }
 
@@ -98,10 +98,13 @@ class OpenAiProvider(
         },
     )
 
-    private fun parseResponse(response: ProviderHttpResult.Response): ImageGenerationResult {
+    private fun parseResponse(
+        response: ProviderHttpResult.Response,
+        prompt: String,
+    ): ImageGenerationResult {
         if (response.statusCode !in 200..299) {
             return ImageGenerationResult.Failure(
-                ProviderError.HttpStatus(response.statusCode, response.body.openAiProviderMessage()),
+                ProviderError.HttpStatus(response.statusCode, response.body.openAiProviderMessage(prompt)),
             )
         }
         val root = try {
@@ -133,7 +136,7 @@ class OpenAiProvider(
         return ImageGenerationResult.Success(GeneratedImage(bytes, "image/png"))
     }
 
-    private fun ByteArray.openAiProviderMessage(): String? {
+    private fun ByteArray.openAiProviderMessage(prompt: String): String? {
         val text = decodeToString()
         val structuredMessage = runCatching {
             json.parseToJsonElement(text).jsonObject["error"]
@@ -141,8 +144,13 @@ class OpenAiProvider(
                 ?.get("message")
                 ?.jsonPrimitive
                 ?.content
-        }.getOrNull()
-        return sanitizeProviderText(structuredMessage ?: text, apiKey)
+        }.getOrNull() ?: return null
+        return sanitizeProviderMessage(
+            value = structuredMessage,
+            apiKey = apiKey,
+            requestPrompt = prompt,
+            endpointHost = binding.endpoint.authority.asciiHost,
+        )
     }
 }
 

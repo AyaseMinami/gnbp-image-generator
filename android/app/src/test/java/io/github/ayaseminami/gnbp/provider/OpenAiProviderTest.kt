@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -153,6 +154,124 @@ class OpenAiProviderTest {
             ImageGenerationResult.Failure(
                 ProviderError.HttpStatus(400, "Redacted provider error"),
             ),
+            result,
+        )
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic is bounded and fully sanitized`() = runTest {
+        val key = "openai secret key+/="
+        val prompt = "private OpenAI prompt sentinel"
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    524,
+                    (
+                        "{\"error\":{\"message\":\"relay timed out\\n\\u0007 " +
+                            "openai secret key+/= openai+secret+key%2B%2F%3D " +
+                            "openai%20secret%20key%2B%2F%3D " +
+                            "https://relay.example/private $prompt ${"x".repeat(240)}\"}}"
+                    ).encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey(key),
+        )
+
+        val result = provider.generate(request().copy(prompt = prompt))
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        val message = requireNotNull(error.providerMessage)
+        assertEquals(524, error.statusCode)
+        assertTrue(message.length <= 200)
+        assertFalse(message.any(Char::isUnsafeProviderMessageCharacter))
+        assertFalse(message.contains(key))
+        assertFalse(message.contains("openai+secret+key%2B%2F%3D"))
+        assertFalse(message.contains("openai%20secret%20key%2B%2F%3D"))
+        assertFalse(message.contains("relay.example"))
+        assertFalse(message.contains(prompt))
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic redacts a prompt containing a URL`() = runTest {
+        val prompt = "a photo of https://example.com/logo.png in the style of Van Gogh"
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    (
+                        "{\"error\":{\"message\":\"Your prompt was rejected: " +
+                            "$prompt -- please revise.\"}}"
+                    ).encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request().copy(prompt = prompt))
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals(
+            "Your prompt was rejected: [REDACTED] -- please revise.",
+            error.providerMessage,
+        )
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic neutralizes Unicode formatting characters`() = runTest {
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    "{\"error\":{\"message\":\"safe\u202Eevil\u2028next\u00A0word\u200Bhidden\"}}"
+                        .encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request())
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals("safe evil next word hidden", error.providerMessage)
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic does not split a surrogate pair at its limit`() = runTest {
+        val prefix = "x".repeat(199)
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    "{\"error\":{\"message\":\"$prefix\uD83D\uDE00\"}}".encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request())
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals(prefix, error.providerMessage)
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP error never exposes an unstructured response body`() = runTest {
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(524, "raw secret response sentinel".encodeToByteArray()),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request())
+
+        assertEquals(
+            ImageGenerationResult.Failure(ProviderError.HttpStatus(524, null)),
             result,
         )
     }

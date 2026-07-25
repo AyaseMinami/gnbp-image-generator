@@ -25,6 +25,8 @@
     <string name="increase_batch_count">Increase image count</string>
     <string name="cancel_task">Cancel task</string>
     <string name="retry_task">Retry task</string>
+    <string name="copy_task_diagnostic">Copy failure details</string>
+    <string name="task_diagnostic_label">Failure details</string>
     <string name="open_result">Open result</string>
     <string name="task_status_queued">Queued</string>
     <string name="task_status_running">Running</string>
@@ -103,6 +105,9 @@
     <string name="task_error_invalid_request">The provider rejected the request parameters. Check the model and generation options.</string>
     <string name="task_error_blocked">The request was blocked by the provider content policy.</string>
     <string name="task_error_http_status">The provider returned an HTTP error. Check the account balance, model, and relay.</string>
+    <string name="task_error_http_code">Provider returned HTTP %1$d</string>
+    <string name="task_error_http_diagnostic">Provider returned HTTP %1$d: %2$s</string>
+    <string name="task_error_provider_message">Provider message: %1$s</string>
     <string name="task_error_transport">A network, TLS, or local-network policy error prevented the connection.</string>
     <string name="task_error_malformed_response">The provider response format was not recognized.</string>
     <string name="task_error_no_image">The provider response did not contain image data.</string>
@@ -125,6 +130,7 @@
     <string name="feedback_permission_denied">Permission is required to save results or access a local relay</string>
     <string name="feedback_result_unavailable">The result could not be opened or shared and may have been removed from the system gallery</string>
     <string name="feedback_prompt_copied">Prompt copied</string>
+    <string name="feedback_diagnostic_copied">Failure details copied</string>
     <string name="generation_unsafe_profile_warning">This profile does not verify server identity or uses cleartext transport. API keys and image content may be intercepted.</string>
     <string name="settings_profiles_title">API profiles</string>
     <string name="settings_profiles_empty">No API profiles yet. Add one to start generating.</string>
