@@ -54,6 +54,12 @@
     <string name="gallery_empty">完成的图像会显示在这里</string>
     <string name="gallery_thumbnail">生成结果缩略图</string>
     <string name="gallery_thumbnail_unavailable">缩略图不可用</string>
+    <string name="view_prompt_details">查看提示词详情</string>
+    <string name="result_prompt_details_title">结果提示词</string>
+    <string name="result_prompt_unavailable">该结果没有可用的提示词。</string>
+    <string name="copy_prompt">复制提示词</string>
+    <string name="prompt_copied">提示词已复制</string>
+    <string name="reuse_prompt_in_generate">用于生成</string>
     <string name="gallery_favorites_only">仅收藏</string>
     <string name="gallery_layout_large_grid">大图网格</string>
     <string name="gallery_layout_compact_grid">紧凑网格</string>
@@ -115,6 +121,7 @@
     <string name="feedback_task_unavailable">该任务当前不可操作</string>
     <string name="feedback_permission_denied">缺少保存结果或访问本地中转所需的权限</string>
     <string name="feedback_result_unavailable">无法打开或分享该结果，文件可能已从系统图库移除</string>
+    <string name="feedback_prompt_copied">提示词已复制</string>
     <string name="generation_unsafe_profile_warning">当前配置未验证服务器身份或使用明文传输。API 密钥与图像内容可能被截获。</string>
     <string name="settings_profiles_title">API 配置</string>
     <string name="settings_profiles_empty">尚无 API 配置。添加配置后即可开始生成。</string>

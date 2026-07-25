@@ -26,6 +26,8 @@ import io.github.ayaseminami.gnbp.media.previewIntent
 import io.github.ayaseminami.gnbp.media.shareIntent
 import io.github.ayaseminami.gnbp.media.toAssetRef
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import io.github.ayaseminami.gnbp.ui.generation.GenerationApp
 import io.github.ayaseminami.gnbp.ui.generation.GenerationPermission
 import io.github.ayaseminami.gnbp.ui.generation.GenerationViewModel
@@ -143,6 +145,8 @@ class MainActivity : ComponentActivity() {
                 onShareResult = ::shareResult,
                 onShareResults = generation::shareGeneratedResults,
                 onReuseResult = ::reuseResult,
+                onCopyPrompt = ::copyPrompt,
+                onReusePrompt = generation::updatePrompt,
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
                 onDeleteResultsFromDevice = generation::deleteGeneratedResultsFromDevice,
@@ -212,6 +216,11 @@ class MainActivity : ComponentActivity() {
         referenceDraft.importPickedUris(listOf(asset.location.toUri()))
     }
 
+    private fun copyPrompt(prompt: String) {
+        copyPromptToClipboard(this, prompt)
+        generation.promptCopied()
+    }
+
     private fun updateCompletionNotifications(enabled: Boolean) {
         generation.updateCompletionNotifications(enabled)
         if (
@@ -225,6 +234,11 @@ class MainActivity : ComponentActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+}
+
+internal fun copyPromptToClipboard(context: android.content.Context, prompt: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.prompt_label), prompt))
 }
 
 internal class PermissionSubmissionCoordinator(

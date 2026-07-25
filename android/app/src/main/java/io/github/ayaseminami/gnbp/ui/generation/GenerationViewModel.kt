@@ -85,6 +85,8 @@ sealed interface GenerationFeedback {
     data object PermissionDenied : GenerationFeedback
 
     data object ResultUnavailable : GenerationFeedback
+
+    data object PromptCopied : GenerationFeedback
 }
 
 @SuppressLint("InlinedApi")
@@ -484,6 +486,10 @@ class GenerationViewModel(
 
     fun resultUnavailable() {
         mutableUiState.update { it.copy(feedback = GenerationFeedback.ResultUnavailable) }
+    }
+
+    fun promptCopied() {
+        mutableUiState.update { it.copy(feedback = GenerationFeedback.PromptCopied) }
     }
 
     fun setGeneratedResultFavorite(id: GeneratedResultId, favorite: Boolean) {

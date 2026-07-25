@@ -79,6 +79,7 @@ import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SELECT_ALL_TEST_TAG
 import io.github.ayaseminami.gnbp.ui.gallery.GALLERY_SHARE_SELECTED_TEST_TAG
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -119,6 +120,9 @@ class GenerationAppInstrumentationTest {
         val enqueueResult = AtomicReference<EnqueueResult?>()
         val enqueueError = AtomicReference<Throwable?>()
         val submitInvoked = AtomicReference(false)
+        val submitCount = AtomicInteger()
+        val copiedPrompt = AtomicReference<String?>()
+        val reusedPrompt = AtomicReference<String?>()
         val shareInvoked = AtomicBoolean(false)
         val reuseInvoked = AtomicBoolean(false)
         val generatedResults = MutableStateFlow<List<GeneratedResult>>(emptyList())
@@ -153,6 +157,7 @@ class GenerationAppInstrumentationTest {
         ).also { engine = it }
         val submitRequest: (String) -> Unit = { prompt ->
             submitInvoked.set(true)
+            submitCount.incrementAndGet()
             scope.launch {
                 try {
                     val result = createdEngine.enqueue(
@@ -219,6 +224,11 @@ class GenerationAppInstrumentationTest {
                 onShareResult = { shareInvoked.set(true) },
                 onShareResults = {},
                 onReuseResult = { reuseInvoked.set(true) },
+                onCopyPrompt = copiedPrompt::set,
+                onReusePrompt = {
+                    reusedPrompt.set(it)
+                    state = state.copy(prompt = it)
+                },
                 onSetResultFavorite = { _, _ -> },
                 onRemoveResultsFromLibrary = {},
                 onDeleteResultsFromDevice = {},
@@ -251,9 +261,23 @@ class GenerationAppInstrumentationTest {
 
         compose.onNodeWithText(context.getString(R.string.tab_gallery)).performClick()
         compose.onNodeWithText("lighthouse").assertExists()
-        compose.onNodeWithContentDescription(context.getString(R.string.share_result)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.more_result_actions)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.view_prompt_details)).performClick()
+        compose.onNodeWithText(context.getString(R.string.result_prompt_details_title)).assertIsDisplayed()
+        compose.onAllNodesWithText("lighthouse").assertCountEquals(2)
+        compose.onNodeWithText(context.getString(R.string.copy_prompt)).performClick()
+        assertEquals("lighthouse", copiedPrompt.get())
+        compose.onNodeWithText(context.getString(R.string.prompt_copied)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.reuse_prompt_in_generate)).performClick()
+        compose.onNodeWithText(context.getString(R.string.prompt_label)).assertExists()
+        assertEquals("lighthouse", reusedPrompt.get())
+        assertEquals(1, submitCount.get())
+        compose.onNodeWithText(context.getString(R.string.tab_gallery)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.more_result_actions)).performClick()
+        compose.onNodeWithText(context.getString(R.string.share_result)).performClick()
         compose.waitUntil(timeoutMillis = 2_000) { shareInvoked.get() }
-        compose.onNodeWithContentDescription(context.getString(R.string.reuse_as_reference)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.more_result_actions)).performClick()
+        compose.onNodeWithText(context.getString(R.string.reuse_as_reference)).performClick()
         compose.waitUntil(timeoutMillis = 2_000) { reuseInvoked.get() }
         compose.onNodeWithText(context.getString(R.string.prompt_label)).assertExists()
     }
@@ -279,6 +303,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = {},
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetFavorite = { id, favorite ->
                     results = results.map { result ->
                         if (result.id == id) result.copy(isFavorite = favorite) else result
@@ -313,6 +339,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = {},
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetFavorite = { _, _ -> },
                 onRemoveFromLibrary = {},
                 onDeleteFromDevice = {},
@@ -323,6 +351,34 @@ class GenerationAppInstrumentationTest {
         compose.onAllNodesWithContentDescription(
             context.getString(R.string.gallery_thumbnail_unavailable),
         ).assertCountEquals(1)
+    }
+
+    @Test
+    fun galleryPromptDetailsShowsUnavailableStateWhenPromptIsBlank() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        compose.setContent {
+            GalleryScreen(
+                results = listOf(generatedResult("blank-prompt", "", favorite = false)),
+                layoutMode = GalleryLayoutMode.LargeGrid,
+                isWorking = false,
+                onLayoutModeChange = {},
+                onOpenResult = {},
+                onShareResult = {},
+                onShareResults = {},
+                onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
+                onSetFavorite = { _, _ -> },
+                onRemoveFromLibrary = {},
+                onDeleteFromDevice = {},
+            )
+        }
+
+        compose.onNodeWithContentDescription(context.getString(R.string.more_result_actions)).performClick()
+        compose.onNodeWithText(context.getString(R.string.view_prompt_details)).performClick()
+        compose.onNodeWithText(context.getString(R.string.result_prompt_unavailable)).assertIsDisplayed()
+        compose.onAllNodesWithText(context.getString(R.string.copy_prompt)).assertCountEquals(0)
+        compose.onAllNodesWithText(context.getString(R.string.reuse_prompt_in_generate)).assertCountEquals(0)
     }
 
     @Test
@@ -342,6 +398,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = {},
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetFavorite = { _, _ -> },
                 onRemoveFromLibrary = {},
                 onDeleteFromDevice = {},
@@ -381,6 +439,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = shared::set,
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetFavorite = { _, _ -> },
                 onRemoveFromLibrary = removed::set,
                 onDeleteFromDevice = {},
@@ -421,6 +481,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = {},
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetFavorite = { _, _ -> },
                 onRemoveFromLibrary = {},
                 onDeleteFromDevice = deleted::set,
@@ -602,6 +664,8 @@ class GenerationAppInstrumentationTest {
                 onShareResult = {},
                 onShareResults = {},
                 onReuseResult = {},
+                onCopyPrompt = {},
+                onReusePrompt = {},
                 onSetResultFavorite = { _, _ -> },
                 onRemoveResultsFromLibrary = {},
                 onDeleteResultsFromDevice = {},
