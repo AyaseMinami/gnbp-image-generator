@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
+import io.github.ayaseminami.gnbp.BuildConfig
 import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.ui.theme.GnbpTheme
 import org.junit.Assert.assertEquals
@@ -24,10 +25,6 @@ class AboutScreenInstrumentationTest {
         compose.setContent {
             GnbpTheme {
                 AboutScreen(
-                    appInfo = AboutAppInfo(
-                        versionName = "9.8.7",
-                        versionCode = 42,
-                    ),
                     onBack = {},
                     onOpenDestination = { destination -> openedDestinations.add(destination) },
                 )
@@ -37,7 +34,13 @@ class AboutScreenInstrumentationTest {
         compose.onNodeWithText("GNBP Image Generator").assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.about_author, "Ayase Minami"))
             .assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.about_version, "9.8.7", 42))
+        compose.onNodeWithText(
+            context.getString(
+                R.string.about_version,
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+            ),
+        )
             .assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.about_privacy_summary))
             .performScrollTo()
