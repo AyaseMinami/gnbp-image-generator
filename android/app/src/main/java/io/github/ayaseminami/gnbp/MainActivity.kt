@@ -90,10 +90,7 @@ class MainActivity : ComponentActivity() {
             val settingsState by generation.settingsState.collectAsState()
             val darkTheme = settingsState.appSettings.themeMode.resolveDarkTheme(isSystemInDarkTheme())
             SideEffect {
-                WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !darkTheme
-                    isAppearanceLightNavigationBars = !darkTheme
-                }
+                syncEdgeToEdgeTheme(darkTheme)
             }
             val taskManagementState by generation.taskManagementState.collectAsState()
             val galleryManagementState by generation.galleryManagementState.collectAsState()
@@ -259,6 +256,13 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+}
+
+internal fun ComponentActivity.syncEdgeToEdgeTheme(darkTheme: Boolean) {
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+        isAppearanceLightStatusBars = !darkTheme
+        isAppearanceLightNavigationBars = !darkTheme
     }
 }
 
