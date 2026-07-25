@@ -810,6 +810,7 @@ private fun noOpSettingsActions(
     onUpdateShowPreview = {},
     onUpdateCompletionNotifications = {},
     onUpdateSoundNotification = {},
+    onOpenAboutDestination = {},
 )
 
 private class InstrumentedTaskRepository : GenerationTaskRepository {

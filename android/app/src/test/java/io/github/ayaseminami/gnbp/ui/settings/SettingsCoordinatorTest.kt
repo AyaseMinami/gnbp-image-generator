@@ -162,6 +162,23 @@ class SettingsCoordinatorTest {
         assertTrue(profiles.values.isEmpty())
     }
 
+    @Test
+    fun `missing browser becomes settings feedback and can be cleared`() = runTest {
+        val coordinator = coordinator()
+        runCurrent()
+
+        coordinator.browserUnavailable()
+
+        assertEquals(
+            SettingsFeedback.Failed(SettingsFailure.BrowserUnavailable),
+            coordinator.state.value.feedback,
+        )
+
+        coordinator.clearFeedback()
+
+        assertEquals(null, coordinator.state.value.feedback)
+    }
+
     private fun kotlinx.coroutines.test.TestScope.coordinator(
         profiles: FakeProfileRepository = FakeProfileRepository(),
         prompts: FakePromptRepository = FakePromptRepository(),

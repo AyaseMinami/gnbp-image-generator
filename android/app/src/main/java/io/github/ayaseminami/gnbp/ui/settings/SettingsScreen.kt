@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -60,6 +61,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
+import io.github.ayaseminami.gnbp.ui.about.AboutScreen
 
 internal const val SETTINGS_ADD_PROFILE_TEST_TAG = "settings-add-profile"
 internal const val SETTINGS_SAVE_PROFILE_TEST_TAG = "settings-save-profile"
@@ -69,6 +71,7 @@ fun SettingsScreen(
     state: SettingsUiState,
     actions: SettingsActions,
 ) {
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     when {
         state.profileEditor != null -> ProfileEditor(
             editor = state.profileEditor,
@@ -80,7 +83,15 @@ fun SettingsScreen(
             isBusy = state.isBusy,
             actions = actions,
         )
-        else -> SettingsHome(state = state, actions = actions)
+        showAbout -> AboutScreen(
+            onBack = { showAbout = false },
+            onOpenDestination = actions.onOpenAboutDestination,
+        )
+        else -> SettingsHome(
+            state = state,
+            actions = actions,
+            onOpenAbout = { showAbout = true },
+        )
     }
 }
 
@@ -88,6 +99,7 @@ fun SettingsScreen(
 private fun SettingsHome(
     state: SettingsUiState,
     actions: SettingsActions,
+    onOpenAbout: () -> Unit,
 ) {
     var deleteProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var deletePromptId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -168,6 +180,20 @@ private fun SettingsHome(
             value = state.appSettings.maxConcurrency,
             onValueChange = actions.onUpdateMaxConcurrency,
         )
+
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.settings_about_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        OutlinedButton(
+            onClick = onOpenAbout,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Info, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.open_about))
+        }
         Spacer(Modifier.height(16.dp))
     }
 

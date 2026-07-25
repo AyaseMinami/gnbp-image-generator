@@ -137,6 +137,18 @@
     <string name="settings_prompts_title">Prompt presets</string>
     <string name="settings_prompts_empty">No prompt presets yet.</string>
     <string name="settings_behavior_title">Generation and notifications</string>
+    <string name="settings_about_title">About</string>
+    <string name="open_about">About GNBP</string>
+    <string name="navigate_back">Back</string>
+    <string name="about_title">About</string>
+    <string name="about_author">Author: %1$s</string>
+    <string name="about_version">Version %1$s (code %2$d)</string>
+    <string name="about_project_title">Project</string>
+    <string name="about_source_repository">Source repository</string>
+    <string name="about_license">MIT License</string>
+    <string name="about_open_releases">View GitHub Releases</string>
+    <string name="about_privacy_title">Privacy and network use</string>
+    <string name="about_privacy_summary">This app has no first-party backend, account system, or telemetry. Image generation contacts user-configured providers and sends request content to the selected provider for processing.</string>
     <string name="add_profile">Add</string>
     <string name="add_prompt">Add</string>
     <string name="edit_profile">Edit API profile</string>
@@ -217,6 +229,7 @@
     <string name="settings_error_invalid_prompt">Preset name and content cannot be empty</string>
     <string name="settings_error_storage">Local settings could not be saved</string>
     <string name="settings_error_notification_permission">Notification permission was denied, so completion notifications were disabled</string>
+    <string name="settings_error_browser_unavailable">Unable to open the link. Check that a browser is available on this device.</string>
     <string name="notification_channel_name">Generation completion</string>
     <string name="notification_silent_channel_name">Generation completion (silent)</string>
     <string name="notification_channel_description">Terminal status notifications for image-generation tasks</string>

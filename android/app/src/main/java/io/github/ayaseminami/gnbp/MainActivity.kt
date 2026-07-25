@@ -29,6 +29,7 @@ import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import io.github.ayaseminami.gnbp.ui.about.AboutPageLauncher
 import io.github.ayaseminami.gnbp.ui.generation.GenerationApp
 import io.github.ayaseminami.gnbp.ui.generation.GenerationPermission
 import io.github.ayaseminami.gnbp.ui.generation.GenerationViewModel
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
             onImported = generation::importCertificate,
             onFailed = generation::certificateImportFailed,
         )
+        val aboutPageLauncher = AboutPageLauncher { intent -> startActivity(intent) }
         setContent {
             val draftState by referenceDraft.state.collectAsState()
             val generationState by generation.uiState.collectAsState()
@@ -110,6 +112,11 @@ class MainActivity : ComponentActivity() {
                     onUpdateShowPreview = generation::updateShowPreview,
                     onUpdateCompletionNotifications = ::updateCompletionNotifications,
                     onUpdateSoundNotification = generation::updateSoundNotification,
+                    onOpenAboutDestination = { destination ->
+                        if (!aboutPageLauncher.open(destination)) {
+                            generation.browserUnavailable()
+                        }
+                    },
                 )
             }
             GenerationApp(
