@@ -28,6 +28,7 @@ import io.github.ayaseminami.gnbp.media.toAssetRef
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import io.github.ayaseminami.gnbp.ui.generation.GenerationApp
 import io.github.ayaseminami.gnbp.ui.generation.GenerationPermission
 import io.github.ayaseminami.gnbp.ui.generation.GenerationViewModel
@@ -146,6 +147,7 @@ class MainActivity : ComponentActivity() {
                 onShareResults = generation::shareGeneratedResults,
                 onReuseResult = ::reuseResult,
                 onCopyPrompt = ::copyPrompt,
+                onCopyTaskDiagnostic = ::copyTaskDiagnostic,
                 onReusePrompt = generation::reusePrompt,
                 onSetResultFavorite = generation::setGeneratedResultFavorite,
                 onRemoveResultsFromLibrary = generation::removeGeneratedResultsFromLibrary,
@@ -221,6 +223,11 @@ class MainActivity : ComponentActivity() {
         generation.promptCopied()
     }
 
+    private fun copyTaskDiagnostic(summary: String) {
+        copyTaskDiagnosticToClipboard(this, summary)
+        generation.diagnosticCopied()
+    }
+
     private fun updateCompletionNotifications(enabled: Boolean) {
         generation.updateCompletionNotifications(enabled)
         if (
@@ -236,9 +243,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-internal fun copyPromptToClipboard(context: android.content.Context, prompt: String) {
+internal fun copyPromptToClipboard(context: Context, prompt: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
     clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.prompt_label), prompt))
+}
+
+internal fun copyTaskDiagnosticToClipboard(context: Context, summary: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java)
+    clipboard.setPrimaryClip(
+        ClipData.newPlainText(context.getString(R.string.task_diagnostic_label), summary),
+    )
 }
 
 internal class PermissionSubmissionCoordinator(

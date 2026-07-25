@@ -109,12 +109,43 @@ sealed interface TaskStatus {
 
     data class Succeeded(val asset: GeneratedAssetReference) : TaskStatus
 
-    data class Failed(val reason: TaskFailureReason) : TaskStatus
+    data class Failed(
+        val reason: TaskFailureReason,
+        val diagnostic: TaskFailureDiagnostic? = null,
+    ) : TaskStatus
 
     data class Cancelled(val reason: TaskCancellationReason) : TaskStatus
 
     data class OutcomeUnknown(val reason: TaskOutcomeUnknownReason) : TaskStatus
 }
+
+data class TaskFailureDiagnostic(
+    val httpStatusCode: Int? = null,
+    val providerMessage: String? = null,
+) {
+    init {
+        require(httpStatusCode != null || providerMessage != null) {
+            "A failure diagnostic must contain a status code or provider message"
+        }
+        require(httpStatusCode == null || httpStatusCode in 100..599) {
+            "HTTP status code is outside the supported range"
+        }
+        providerMessage?.let { message ->
+            require(message.isNotBlank()) { "Provider message must not be blank" }
+            require(message.length <= MAX_TASK_FAILURE_MESSAGE_LENGTH) {
+                "Provider message exceeds the safe display limit"
+            }
+            require(message.none(Char::isISOControl)) {
+                "Provider message must not contain control characters"
+            }
+        }
+    }
+
+    override fun toString(): String =
+        "TaskFailureDiagnostic(httpStatusCode=$httpStatusCode, providerMessage=[REDACTED])"
+}
+
+const val MAX_TASK_FAILURE_MESSAGE_LENGTH = 200
 
 enum class TaskFailureReason {
     ProviderUnavailable,

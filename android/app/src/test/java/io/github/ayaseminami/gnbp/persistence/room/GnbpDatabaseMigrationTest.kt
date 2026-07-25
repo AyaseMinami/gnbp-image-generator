@@ -28,6 +28,62 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class GnbpDatabaseMigrationTest {
     @Test
+    fun `migration leaves legacy failure diagnostics absent`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "gnbp-diagnostic-migration-${System.nanoTime()}.db"
+        val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(databaseName)
+            .callback(
+                object : SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE generation_tasks (" +
+                                "id TEXT NOT NULL PRIMARY KEY, " +
+                                "request_json TEXT NOT NULL, " +
+                                "status TEXT NOT NULL, " +
+                                "created_at INTEGER NOT NULL, " +
+                                "started_at INTEGER, " +
+                                "finished_at INTEGER, " +
+                                "source_task_id TEXT, " +
+                                "terminal_reason TEXT, " +
+                                "result_asset_id TEXT, " +
+                                "result_uri TEXT, " +
+                                "result_display_name TEXT, " +
+                                "result_mime_type TEXT, " +
+                                "result_byte_size INTEGER)",
+                        )
+                        db.execSQL(
+                            "INSERT INTO generation_tasks " +
+                                "(id, request_json, status, created_at, terminal_reason) " +
+                                "VALUES ('legacy-failure', '{}', 'FAILED', 100, 'HTTP_STATUS')",
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int,
+                    ) = Unit
+                },
+            )
+            .build()
+        FrameworkSQLiteOpenHelperFactory().create(configuration).use { helper ->
+            val database = helper.writableDatabase
+            GnbpDatabase.MIGRATION_5_6.migrate(database)
+
+            database.query(
+                "SELECT failure_http_status, failure_provider_message " +
+                    "FROM generation_tasks WHERE id = 'legacy-failure'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+        assertTrue(context.deleteDatabase(databaseName))
+    }
+
+    @Test
     fun `migration backfills successful tasks into generated results exactly once`() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val databaseName = "gnbp-result-migration-${System.nanoTime()}.db"

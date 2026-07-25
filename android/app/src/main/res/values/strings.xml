@@ -25,6 +25,8 @@
     <string name="increase_batch_count">增加生成数量</string>
     <string name="cancel_task">取消任务</string>
     <string name="retry_task">重试任务</string>
+    <string name="copy_task_diagnostic">复制失败详情</string>
+    <string name="task_diagnostic_label">失败详情</string>
     <string name="open_result">打开结果</string>
     <string name="task_status_queued">等待中</string>
     <string name="task_status_running">生成中</string>
@@ -100,6 +102,9 @@
     <string name="task_error_invalid_request">服务商拒绝了请求参数。请检查模型和生成选项。</string>
     <string name="task_error_blocked">请求被服务商的内容政策拦截。</string>
     <string name="task_error_http_status">服务商返回了 HTTP 错误。请检查余额、模型和中转服务。</string>
+    <string name="task_error_http_code">服务商返回 HTTP %1$d</string>
+    <string name="task_error_http_diagnostic">服务商返回 HTTP %1$d：%2$s</string>
+    <string name="task_error_provider_message">服务商消息：%1$s</string>
     <string name="task_error_transport">网络、TLS 或局域网策略导致连接失败。</string>
     <string name="task_error_malformed_response">服务商响应格式无法识别。</string>
     <string name="task_error_no_image">服务商响应中没有图像数据。</string>
@@ -122,6 +127,7 @@
     <string name="feedback_permission_denied">缺少保存结果或访问本地中转所需的权限</string>
     <string name="feedback_result_unavailable">无法打开或分享该结果，文件可能已从系统图库移除</string>
     <string name="feedback_prompt_copied">提示词已复制</string>
+    <string name="feedback_diagnostic_copied">失败详情已复制</string>
     <string name="generation_unsafe_profile_warning">当前配置未验证服务器身份或使用明文传输。API 密钥与图像内容可能被截获。</string>
     <string name="settings_profiles_title">API 配置</string>
     <string name="settings_profiles_empty">尚无 API 配置。添加配置后即可开始生成。</string>

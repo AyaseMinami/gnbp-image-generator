@@ -260,6 +260,81 @@ class GenerationEngineTest {
     }
 
     @Test
+    fun `responded HTTP failure preserves its safe diagnostic`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val provider = SequenceProvider(
+            listOf(
+                ImageGenerationResult.Failure(
+                    ProviderError.HttpStatus(524, "Upstream request timed out"),
+                ),
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("http-failure"),
+        )
+        try {
+            val taskId = (engine.enqueue(batchRequest()) as EnqueueResult.Accepted).taskIds.single()
+            val failed = engine.observeTasks().first { tasks ->
+                tasks.singleOrNull()?.status is TaskStatus.Failed
+            }.single()
+
+            assertEquals(taskId, failed.id)
+            assertEquals(
+                TaskStatus.Failed(
+                    reason = TaskFailureReason.HttpStatus,
+                    diagnostic = TaskFailureDiagnostic(
+                        httpStatusCode = 524,
+                        providerMessage = "Upstream request timed out",
+                    ),
+                ),
+                failed.status,
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun `possibly sent HTTP failure remains outcome unknown without diagnostics`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val provider = SequenceProvider(
+            listOf(
+                ImageGenerationResult.Failure(
+                    ProviderError.HttpStatus(
+                        statusCode = 524,
+                        providerMessage = "Do not persist this response",
+                        certainty = DeliveryCertainty.PossiblySent,
+                    ),
+                ),
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("unknown-http-outcome"),
+        )
+        try {
+            val taskId = (engine.enqueue(batchRequest()) as EnqueueResult.Accepted).taskIds.single()
+            val unknown = engine.observeTasks().first { tasks ->
+                tasks.singleOrNull()?.status is TaskStatus.OutcomeUnknown
+            }.single()
+
+            assertEquals(taskId, unknown.id)
+            assertEquals(
+                TaskStatus.OutcomeUnknown(TaskOutcomeUnknownReason.ProviderResponseUnknown),
+                unknown.status,
+            )
+            assertEquals(1, provider.callCount.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `startup reconciles running tasks and resumes queued tasks`() = runTest {
         val request = taskRequestSnapshot()
         val repository = InMemoryTaskRepository(

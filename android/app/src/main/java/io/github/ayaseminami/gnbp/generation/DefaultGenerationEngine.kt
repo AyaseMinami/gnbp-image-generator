@@ -860,7 +860,15 @@ private fun ProviderError.toTaskStatus(cancellationRequested: Boolean): TaskStat
     val failure = when (this) {
         is ProviderError.InvalidRequest -> TaskFailureReason.InvalidRequest
         is ProviderError.Blocked -> TaskFailureReason.Blocked
-        is ProviderError.HttpStatus -> TaskFailureReason.HttpStatus
+        is ProviderError.HttpStatus -> {
+            return TaskStatus.Failed(
+                reason = TaskFailureReason.HttpStatus,
+                diagnostic = TaskFailureDiagnostic(
+                    httpStatusCode = statusCode,
+                    providerMessage = providerMessage,
+                ),
+            )
+        }
         is ProviderError.Transport -> TaskFailureReason.Transport
         is ProviderError.MalformedResponse -> TaskFailureReason.MalformedResponse
         ProviderError.NoImageData -> TaskFailureReason.NoImageData

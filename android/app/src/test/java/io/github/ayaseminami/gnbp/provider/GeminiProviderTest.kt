@@ -151,15 +151,17 @@ class GeminiProviderTest {
     }
 
     @Test
-    fun `Gemini HTTP error redacts raw and URL-encoded API keys`() = runTest {
+    fun `Gemini HTTP diagnostic is structured bounded and fully sanitized`() = runTest {
         val key = "secret key+/="
+        val prompt = "private prompt sentinel"
         val provider = GeminiProvider(
             transport = RecordingTransport(
                 ProviderHttpResult.Response(
-                    401,
+                    524,
                     (
-                        "rejected secret key+/=, secret+key%2B%2F%3D, " +
-                            "and secret%20key%2B%2F%3D"
+                        "{\"error\":{\"message\":\"relay timed out\\n\\u0007 " +
+                            "secret key+/= secret+key%2B%2F%3D secret%20key%2B%2F%3D " +
+                            "https://relay.example/private $prompt ${"x".repeat(240)}\"}}"
                     ).encodeToByteArray(),
                 ),
             ),
@@ -167,14 +169,38 @@ class GeminiProviderTest {
             apiKey = ApiKey(key),
         )
 
-        val result = provider.generate(geminiRequest())
+        val result = provider.generate(geminiRequest().copy(prompt = prompt))
 
-        val message = ((result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus)
-            .providerMessage.orEmpty()
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        val message = requireNotNull(error.providerMessage)
+        assertEquals(524, error.statusCode)
+        assertTrue(message.length <= 200)
+        assertFalse(message.any { character -> character.code < 0x20 || character.code == 0x7f })
         assertFalse(message.contains(key))
         assertFalse(message.contains("secret+key%2B%2F%3D"))
         assertFalse(message.contains("secret%20key%2B%2F%3D"))
+        assertFalse(message.contains("relay.example"))
+        assertFalse(message.contains(prompt))
         assertTrue(message.contains("[REDACTED]"))
+        assertFalse(error.toString().contains("relay timed out"))
+    }
+
+    @Test
+    fun `Gemini HTTP error never falls back to an unstructured response body`() = runTest {
+        val provider = GeminiProvider(
+            transport = RecordingTransport(
+                ProviderHttpResult.Response(502, "raw secret response sentinel".encodeToByteArray()),
+            ),
+            binding = strictBinding(),
+            apiKey = ApiKey("key"),
+        )
+
+        val result = provider.generate(geminiRequest())
+
+        assertEquals(
+            ProviderError.HttpStatus(502, null),
+            (result as ImageGenerationResult.Failure).error,
+        )
     }
 
     @Test

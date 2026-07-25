@@ -72,11 +72,13 @@ internal data class GenerationTaskEntity(
     @ColumnInfo(name = "result_display_name") val resultDisplayName: String?,
     @ColumnInfo(name = "result_mime_type") val resultMimeType: String?,
     @ColumnInfo(name = "result_byte_size") val resultByteSize: Long?,
+    @ColumnInfo(name = "failure_http_status") val failureHttpStatus: Int? = null,
+    @ColumnInfo(name = "failure_provider_message") val failureProviderMessage: String? = null,
 ) {
     override fun toString(): String =
         "GenerationTaskEntity(id=[REDACTED], request=[REDACTED], status=$status, " +
             "timestamps=[REDACTED], sourceTaskId=[REDACTED], terminalReason=$terminalReason, " +
-            "result=[REDACTED])"
+            "result=[REDACTED], failureDiagnostic=[REDACTED])"
 }
 
 @Entity(
