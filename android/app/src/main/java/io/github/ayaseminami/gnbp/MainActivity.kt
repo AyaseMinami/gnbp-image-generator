@@ -6,9 +6,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
@@ -21,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -260,10 +261,16 @@ class MainActivity : ComponentActivity() {
 }
 
 internal fun ComponentActivity.syncEdgeToEdgeTheme(darkTheme: Boolean) {
-    WindowCompat.getInsetsController(window, window.decorView).apply {
-        isAppearanceLightStatusBars = !darkTheme
-        isAppearanceLightNavigationBars = !darkTheme
-    }
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.auto(
+            Color.TRANSPARENT,
+            Color.TRANSPARENT,
+        ) { darkTheme },
+        navigationBarStyle = SystemBarStyle.auto(
+            Color.argb(0xe6, 0xff, 0xff, 0xff),
+            Color.argb(0x80, 0x1b, 0x1b, 0x1b),
+        ) { darkTheme },
+    )
 }
 
 internal fun copyPromptToClipboard(context: Context, prompt: String) {
