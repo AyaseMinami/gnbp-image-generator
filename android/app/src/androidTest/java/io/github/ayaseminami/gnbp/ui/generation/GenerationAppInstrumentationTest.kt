@@ -8,9 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -49,6 +53,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderProfile
 import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.GeneratedImage
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
@@ -642,12 +647,13 @@ class GenerationAppInstrumentationTest {
     }
 
     @Test
-    fun settingsProfileEditorSurvivesNavigationRestoreAndUsesRealFormActions() {
+    fun settingsIntegratesThemeAboutAndProfileActionsAcrossRestoration() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val saved = AtomicBoolean(false)
+        var retainedSettingsState = SettingsUiState()
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
-            var settingsState by remember { mutableStateOf(SettingsUiState()) }
+            var settingsState by remember { mutableStateOf(retainedSettingsState) }
             val actions = remember {
                 noOpSettingsActions(
                     onNewProfile = {
@@ -671,6 +677,13 @@ class GenerationAppInstrumentationTest {
                         )
                     },
                     onSaveProfile = { saved.set(true) },
+                    onUpdateThemeMode = { themeMode ->
+                        val updated = settingsState.copy(
+                            appSettings = settingsState.appSettings.copy(themeMode = themeMode),
+                        )
+                        retainedSettingsState = updated
+                        settingsState = updated
+                    },
                 )
             }
             GenerationApp(
@@ -718,8 +731,29 @@ class GenerationAppInstrumentationTest {
 
         compose.onNodeWithText(context.getString(R.string.tab_settings)).performClick()
         compose.onNodeWithText(context.getString(R.string.settings_behavior_title)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.theme_dark))
+            .performScrollTo()
+            .performClick()
+            .assertIsSelected()
+        assertTrue(
+            compose.onNodeWithTag(GENERATION_APP_SURFACE_TEST_TAG)
+                .captureToImage()
+                .toPixelMap()[1, 1]
+                .luminance() < 0.5f,
+        )
+        compose.onNodeWithText(context.getString(R.string.theme_light))
+            .performClick()
+            .assertIsSelected()
+        assertTrue(
+            compose.onNodeWithTag(GENERATION_APP_SURFACE_TEST_TAG)
+                .captureToImage()
+                .toPixelMap()[1, 1]
+                .luminance() > 0.5f,
+        )
+        compose.onNodeWithText(context.getString(R.string.theme_dark)).performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText(context.getString(R.string.settings_behavior_title)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.theme_dark)).assertIsSelected()
 
         compose.onNodeWithText(context.getString(R.string.open_about)).performScrollTo().performClick()
         compose.onNodeWithContentDescription(context.getString(R.string.navigate_back))
@@ -790,6 +824,7 @@ private fun noOpSettingsActions(
     onNewProfile: () -> Unit = {},
     onUpdateProfileText: (ProfileTextField, String) -> Unit = { _, _ -> },
     onSaveProfile: () -> Unit = {},
+    onUpdateThemeMode: (ThemeMode) -> Unit = {},
 ) = SettingsActions(
     onNewProfile = onNewProfile,
     onEditProfile = {},
@@ -815,6 +850,7 @@ private fun noOpSettingsActions(
     onUpdateShowPreview = {},
     onUpdateCompletionNotifications = {},
     onUpdateSoundNotification = {},
+    onUpdateThemeMode = onUpdateThemeMode,
     onOpenAboutDestination = {},
 )
 

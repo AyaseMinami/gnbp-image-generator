@@ -105,6 +105,7 @@ private enum class AppSection {
 }
 
 internal const val GENERATION_SUBMIT_TEST_TAG = "generation-submit"
+internal const val GENERATION_APP_SURFACE_TEST_TAG = "generation-app-surface"
 internal const val TASKS_SELECTION_MODE_TEST_TAG = "tasks-selection-mode"
 internal const val TASKS_SELECT_ALL_TEST_TAG = "tasks-select-all"
 internal const val TASKS_DELETE_SELECTED_TEST_TAG = "tasks-delete-selected"
@@ -190,7 +191,7 @@ fun GenerationApp(
         }
     }
 
-    GnbpTheme {
+    GnbpTheme(themeMode = settingsState.appSettings.themeMode) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -218,7 +219,8 @@ fun GenerationApp(
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(contentPadding)
+                    .testTag(GENERATION_APP_SURFACE_TEST_TAG),
                 color = MaterialTheme.colorScheme.background,
             ) {
                 when (selectedSection) {

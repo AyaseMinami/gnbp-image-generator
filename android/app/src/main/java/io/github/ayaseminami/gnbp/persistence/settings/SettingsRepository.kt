@@ -21,6 +21,12 @@ enum class GalleryLayoutMode {
     List,
 }
 
+enum class ThemeMode {
+    System,
+    Light,
+    Dark,
+}
+
 data class AppSettings(
     val selectedProfileId: ProfileId? = null,
     val selectedPromptId: PromptId? = null,
@@ -30,6 +36,7 @@ data class AppSettings(
     val completionNotifications: Boolean = DEFAULT_COMPLETION_NOTIFICATIONS,
     val soundNotification: Boolean = DEFAULT_SOUND_NOTIFICATION,
     val galleryLayoutMode: GalleryLayoutMode = DEFAULT_GALLERY_LAYOUT_MODE,
+    val themeMode: ThemeMode = DEFAULT_THEME_MODE,
 ) {
     init {
         require(batchCount in 1..MAX_BATCH_COUNT) { "Batch count must be between 1 and $MAX_BATCH_COUNT" }
@@ -42,7 +49,8 @@ data class AppSettings(
         "AppSettings(selectedProfileId=[REDACTED], selectedPromptId=[REDACTED], " +
             "batchCount=$batchCount, maxConcurrency=$maxConcurrency, showPreview=$showPreview, " +
             "completionNotifications=$completionNotifications, " +
-            "soundNotification=$soundNotification, galleryLayoutMode=$galleryLayoutMode)"
+            "soundNotification=$soundNotification, galleryLayoutMode=$galleryLayoutMode, " +
+            "themeMode=$themeMode)"
 
     companion object {
         const val DEFAULT_BATCH_COUNT = 1
@@ -51,6 +59,7 @@ data class AppSettings(
         const val DEFAULT_COMPLETION_NOTIFICATIONS = false
         const val DEFAULT_SOUND_NOTIFICATION = true
         val DEFAULT_GALLERY_LAYOUT_MODE = GalleryLayoutMode.LargeGrid
+        val DEFAULT_THEME_MODE = ThemeMode.System
         const val MAX_BATCH_COUNT = 16
         const val MAX_CONCURRENCY = 2
     }
@@ -83,6 +92,7 @@ class DataStoreSettingsRepository(
             preferences[SettingsKeys.COMPLETION_NOTIFICATIONS] = settings.completionNotifications
             preferences[SettingsKeys.SOUND_NOTIFICATION] = settings.soundNotification
             preferences[SettingsKeys.GALLERY_LAYOUT_MODE] = settings.galleryLayoutMode.name
+            preferences[SettingsKeys.THEME_MODE] = settings.themeMode.name
             preferences[SettingsKeys.SCHEMA_VERSION] = SettingsDataMigration.CURRENT_SCHEMA_VERSION
         }
     }
@@ -96,7 +106,8 @@ class SettingsDataMigration : DataMigration<Preferences> {
             currentData[SettingsKeys.SHOW_PREVIEW] == null ||
             currentData[SettingsKeys.COMPLETION_NOTIFICATIONS] == null ||
             currentData[SettingsKeys.SOUND_NOTIFICATION] == null ||
-            currentData[SettingsKeys.GALLERY_LAYOUT_MODE] == null
+            currentData[SettingsKeys.GALLERY_LAYOUT_MODE] == null ||
+            currentData[SettingsKeys.THEME_MODE] == null
 
     override suspend fun migrate(currentData: Preferences): Preferences =
         currentData.toMutablePreferences().apply {
@@ -119,13 +130,16 @@ class SettingsDataMigration : DataMigration<Preferences> {
             if (this[SettingsKeys.GALLERY_LAYOUT_MODE] == null) {
                 this[SettingsKeys.GALLERY_LAYOUT_MODE] = AppSettings.DEFAULT_GALLERY_LAYOUT_MODE.name
             }
+            if (this[SettingsKeys.THEME_MODE] == null) {
+                this[SettingsKeys.THEME_MODE] = AppSettings.DEFAULT_THEME_MODE.name
+            }
             this[SettingsKeys.SCHEMA_VERSION] = CURRENT_SCHEMA_VERSION
         }
 
     override suspend fun cleanUp() = Unit
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 3
+        const val CURRENT_SCHEMA_VERSION = 4
     }
 }
 
@@ -139,6 +153,7 @@ internal object SettingsKeys {
     val COMPLETION_NOTIFICATIONS = booleanPreferencesKey("completion_notifications")
     val SOUND_NOTIFICATION = booleanPreferencesKey("sound_notification")
     val GALLERY_LAYOUT_MODE = stringPreferencesKey("gallery_layout_mode")
+    val THEME_MODE = stringPreferencesKey("theme_mode")
 }
 
 private fun Preferences.toAppSettings(): AppSettings = AppSettings(
@@ -155,4 +170,7 @@ private fun Preferences.toAppSettings(): AppSettings = AppSettings(
     galleryLayoutMode = this[SettingsKeys.GALLERY_LAYOUT_MODE]
         ?.let { raw -> GalleryLayoutMode.entries.firstOrNull { mode -> mode.name == raw } }
         ?: AppSettings.DEFAULT_GALLERY_LAYOUT_MODE,
+    themeMode = this[SettingsKeys.THEME_MODE]
+        ?.let { raw -> ThemeMode.entries.firstOrNull { mode -> mode.name == raw } }
+        ?: AppSettings.DEFAULT_THEME_MODE,
 )

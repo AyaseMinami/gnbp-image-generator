@@ -61,6 +61,7 @@ class DataStoreSettingsRepositoryTest {
                 completionNotifications = false,
                 soundNotification = false,
                 galleryLayoutMode = GalleryLayoutMode.CompactGrid,
+                themeMode = ThemeMode.Dark,
             ),
         )
         assertTrue(firstRepository.observeSettings().first().selectedProfileId == ProfileId("profile-1"))
@@ -82,6 +83,7 @@ class DataStoreSettingsRepositoryTest {
         assertFalse(reloaded.completionNotifications)
         assertFalse(reloaded.soundNotification)
         assertEquals(GalleryLayoutMode.CompactGrid, reloaded.galleryLayoutMode)
+        assertEquals(ThemeMode.Dark, reloaded.themeMode)
         secondJob.cancelAndJoin()
     }
 
@@ -111,7 +113,30 @@ class DataStoreSettingsRepositoryTest {
         )
         assertEquals(AppSettings.DEFAULT_SOUND_NOTIFICATION, migrated.soundNotification)
         assertEquals(AppSettings.DEFAULT_GALLERY_LAYOUT_MODE, migrated.galleryLayoutMode)
+        assertEquals(ThemeMode.System, migrated.themeMode)
         migratedJob.cancelAndJoin()
+    }
+
+    @Test
+    fun `unknown persisted theme falls back without terminating settings`() = runTest {
+        val storage = InMemoryPreferencesStorage(
+            mutablePreferencesOf(
+                SettingsKeys.SCHEMA_VERSION to SettingsDataMigration.CURRENT_SCHEMA_VERSION,
+                SettingsKeys.THEME_MODE to "future-theme",
+            ),
+        )
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val store = DataStoreFactory.create(
+            storage = storage,
+            scope = scope,
+            migrations = listOf(SettingsDataMigration()),
+        )
+
+        val settings = DataStoreSettingsRepository(store).observeSettings().first()
+
+        assertEquals(ThemeMode.System, settings.themeMode)
+        job.cancelAndJoin()
     }
 
     @Test

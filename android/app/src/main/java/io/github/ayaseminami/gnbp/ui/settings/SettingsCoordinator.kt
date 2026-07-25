@@ -10,6 +10,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptRepository
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
 import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.transport.LocalNetworkMode
@@ -362,6 +363,10 @@ class SettingsCoordinator(
 
     fun updateGalleryLayoutMode(value: GalleryLayoutMode) = updateSettings {
         it.copy(galleryLayoutMode = value)
+    }
+
+    fun updateThemeMode(value: ThemeMode) = updateSettings {
+        it.copy(themeMode = value)
     }
 
     fun notificationPermissionDenied() {
