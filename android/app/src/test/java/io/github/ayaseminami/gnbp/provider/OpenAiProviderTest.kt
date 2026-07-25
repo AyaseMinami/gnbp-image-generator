@@ -184,7 +184,7 @@ class OpenAiProviderTest {
         val message = requireNotNull(error.providerMessage)
         assertEquals(524, error.statusCode)
         assertTrue(message.length <= 200)
-        assertFalse(message.any { character -> character.isISOControl() })
+        assertFalse(message.any(Char::isUnsafeProviderMessageCharacter))
         assertFalse(message.contains(key))
         assertFalse(message.contains("openai+secret+key%2B%2F%3D"))
         assertFalse(message.contains("openai%20secret%20key%2B%2F%3D"))
@@ -236,6 +236,26 @@ class OpenAiProviderTest {
 
         val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
         assertEquals("safe evil next word hidden", error.providerMessage)
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic does not split a surrogate pair at its limit`() = runTest {
+        val prefix = "x".repeat(199)
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    "{\"error\":{\"message\":\"$prefix\uD83D\uDE00\"}}".encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request())
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals(prefix, error.providerMessage)
     }
 
     @Test

@@ -155,9 +155,13 @@ internal fun sanitizeProviderMessage(
     endpointHost: String,
 ): String? {
     val rawKey = apiKey.reveal()
+    val promptWithoutUrls = HTTP_URL_PATTERN.replace(requestPrompt, REDACTED_URL)
     val sensitiveVariants = buildSet {
         add(rawKey)
-        addAll(listOf(requestPrompt, endpointHost).filter(String::isNotBlank))
+        addAll(
+            listOf(requestPrompt, promptWithoutUrls, endpointHost)
+                .filter(String::isNotBlank),
+        )
         add(URLEncoder.encode(rawKey, StandardCharsets.UTF_8.name()))
         HttpUrl.Builder()
             .scheme("https")
@@ -168,10 +172,11 @@ internal fun sanitizeProviderMessage(
             ?.substringAfter('=')
             ?.let(::add)
     }.sortedByDescending(String::length)
-    val withoutSensitiveValues = sensitiveVariants.fold(value) { sanitized, sensitiveValue ->
+    val withoutUrls = HTTP_URL_PATTERN.replace(value, REDACTED_URL)
+    val withoutSensitiveValues = sensitiveVariants.fold(withoutUrls) { sanitized, sensitiveValue ->
         sanitized.replace(sensitiveValue, "[REDACTED]", ignoreCase = true)
     }
-    return HTTP_URL_PATTERN.replace(withoutSensitiveValues, "[REDACTED_URL]")
+    return withoutSensitiveValues
         .map { character ->
             if (character.isUnsafeProviderMessageCharacter()) ' ' else character
         }
@@ -179,6 +184,7 @@ internal fun sanitizeProviderMessage(
         .replace(WHITESPACE_PATTERN, " ")
         .trim()
         .take(MAX_PROVIDER_MESSAGE_LENGTH)
+        .withoutTrailingHighSurrogate()
         .trimEnd()
         .ifBlank { null }
 }
@@ -190,5 +196,9 @@ internal fun Char.isUnsafeProviderMessageCharacter(): Boolean =
         (this != ' ' && (isWhitespace() || Character.isSpaceChar(this))) ||
         Character.getType(this) == Character.FORMAT.toInt()
 
+private fun String.withoutTrailingHighSurrogate(): String =
+    if (lastOrNull()?.let { Character.isHighSurrogate(it) } == true) dropLast(1) else this
+
 private val HTTP_URL_PATTERN = Regex("(?i)\\bhttps?://[^\\s<>\\\"']+")
 private val WHITESPACE_PATTERN = Regex("\\s+")
+private const val REDACTED_URL = "[REDACTED_URL]"
