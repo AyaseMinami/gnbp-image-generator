@@ -114,7 +114,7 @@ class RoomGenerationTaskRepository internal constructor(
     private fun GenerationTaskEntity.toTask(): GenerationTask {
         val request = TaskRequestJsonCodec.decode(requestJson)
         val failureDiagnostic = if (failureHttpStatus != null || failureProviderMessage != null) {
-            TaskFailureDiagnostic(
+            TaskFailureDiagnostic.fromUntrusted(
                 httpStatusCode = failureHttpStatus,
                 providerMessage = failureProviderMessage,
             )

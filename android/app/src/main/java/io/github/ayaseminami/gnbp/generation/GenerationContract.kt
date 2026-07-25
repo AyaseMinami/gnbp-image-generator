@@ -1,6 +1,8 @@
 package io.github.ayaseminami.gnbp.generation
 
 import io.github.ayaseminami.gnbp.provider.GenerationParameters
+import io.github.ayaseminami.gnbp.provider.MAX_PROVIDER_MESSAGE_LENGTH
+import io.github.ayaseminami.gnbp.provider.isUnsafeProviderMessageCharacter
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
@@ -127,25 +129,38 @@ data class TaskFailureDiagnostic(
         require(httpStatusCode != null || providerMessage != null) {
             "A failure diagnostic must contain a status code or provider message"
         }
-        require(httpStatusCode == null || httpStatusCode in 100..599) {
+        require(httpStatusCode == null || isSupportedHttpStatusCode(httpStatusCode)) {
             "HTTP status code is outside the supported range"
         }
         providerMessage?.let { message ->
-            require(message.isNotBlank()) { "Provider message must not be blank" }
-            require(message.length <= MAX_TASK_FAILURE_MESSAGE_LENGTH) {
-                "Provider message exceeds the safe display limit"
-            }
-            require(message.none(Char::isISOControl)) {
-                "Provider message must not contain control characters"
+            require(isSafeProviderMessage(message)) {
+                "Provider message is outside the safe display policy"
             }
         }
     }
 
     override fun toString(): String =
         "TaskFailureDiagnostic(httpStatusCode=$httpStatusCode, providerMessage=[REDACTED])"
-}
 
-const val MAX_TASK_FAILURE_MESSAGE_LENGTH = 200
+    companion object {
+        internal fun fromUntrusted(
+            httpStatusCode: Int?,
+            providerMessage: String?,
+        ): TaskFailureDiagnostic? {
+            val safeStatusCode = httpStatusCode?.takeIf(::isSupportedHttpStatusCode)
+            val safeProviderMessage = providerMessage?.takeIf(::isSafeProviderMessage)
+            if (safeStatusCode == null && safeProviderMessage == null) return null
+            return TaskFailureDiagnostic(safeStatusCode, safeProviderMessage)
+        }
+
+        private fun isSupportedHttpStatusCode(value: Int): Boolean = value in 100..599
+
+        private fun isSafeProviderMessage(value: String): Boolean =
+            value.isNotBlank() &&
+                value.length <= MAX_PROVIDER_MESSAGE_LENGTH &&
+                value.none(Char::isUnsafeProviderMessageCharacter)
+    }
+}
 
 enum class TaskFailureReason {
     ProviderUnavailable,

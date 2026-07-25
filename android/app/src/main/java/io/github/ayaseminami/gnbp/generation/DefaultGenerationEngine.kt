@@ -863,7 +863,7 @@ private fun ProviderError.toTaskStatus(cancellationRequested: Boolean): TaskStat
         is ProviderError.HttpStatus -> {
             return TaskStatus.Failed(
                 reason = TaskFailureReason.HttpStatus,
-                diagnostic = TaskFailureDiagnostic(
+                diagnostic = TaskFailureDiagnostic.fromUntrusted(
                     httpStatusCode = statusCode,
                     providerMessage = providerMessage,
                 ),

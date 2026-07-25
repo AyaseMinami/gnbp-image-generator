@@ -298,6 +298,44 @@ class GenerationEngineTest {
     }
 
     @Test
+    fun `unsupported HTTP status fails safely and worker continues the queue`() = runTest {
+        val repository = InMemoryTaskRepository()
+        val provider = SequenceProvider(
+            listOf(
+                ImageGenerationResult.Failure(
+                    ProviderError.HttpStatus(999, "Nonstandard relay status"),
+                ),
+                ImageGenerationResult.Success(GeneratedImage(byteArrayOf(1), "image/png")),
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            provider = provider,
+            maxConcurrency = 1,
+            ids = listOf("unsupported-http-status", "queued-after-http-failure"),
+        )
+        try {
+            val taskIds = (engine.enqueue(batchRequest(count = 2)) as EnqueueResult.Accepted).taskIds
+            val tasks = engine.observeTasks().first { current ->
+                current.any { task -> task.status is TaskStatus.Failed } &&
+                    current.any { task -> task.status is TaskStatus.Succeeded }
+            }
+
+            assertEquals(
+                TaskStatus.Failed(
+                    TaskFailureReason.HttpStatus,
+                    TaskFailureDiagnostic(providerMessage = "Nonstandard relay status"),
+                ),
+                tasks.single { it.id == taskIds.first() }.status,
+            )
+            assertTrue(tasks.single { it.id == taskIds.last() }.status is TaskStatus.Succeeded)
+            assertEquals(2, provider.callCount.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `possibly sent HTTP failure remains outcome unknown without diagnostics`() = runTest {
         val repository = InMemoryTaskRepository()
         val provider = SequenceProvider(

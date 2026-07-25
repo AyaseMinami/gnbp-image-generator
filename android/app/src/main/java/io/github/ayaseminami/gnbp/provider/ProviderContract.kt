@@ -168,13 +168,12 @@ internal fun sanitizeProviderMessage(
             ?.substringAfter('=')
             ?.let(::add)
     }.sortedByDescending(String::length)
-    val withoutUrls = HTTP_URL_PATTERN.replace(value, "[REDACTED_URL]")
-    val redacted = sensitiveVariants.fold(withoutUrls) { sanitized, sensitiveValue ->
+    val withoutSensitiveValues = sensitiveVariants.fold(value) { sanitized, sensitiveValue ->
         sanitized.replace(sensitiveValue, "[REDACTED]", ignoreCase = true)
     }
-    return redacted
+    return HTTP_URL_PATTERN.replace(withoutSensitiveValues, "[REDACTED_URL]")
         .map { character ->
-            if (character.code < 0x20 || character.code in 0x7f..0x9f) ' ' else character
+            if (character.isUnsafeProviderMessageCharacter()) ' ' else character
         }
         .joinToString(separator = "")
         .replace(WHITESPACE_PATTERN, " ")
@@ -185,6 +184,11 @@ internal fun sanitizeProviderMessage(
 }
 
 internal const val MAX_PROVIDER_MESSAGE_LENGTH = 200
+
+internal fun Char.isUnsafeProviderMessageCharacter(): Boolean =
+    isISOControl() ||
+        (this != ' ' && (isWhitespace() || Character.isSpaceChar(this))) ||
+        Character.getType(this) == Character.FORMAT.toInt()
 
 private val HTTP_URL_PATTERN = Regex("(?i)\\bhttps?://[^\\s<>\\\"']+")
 private val WHITESPACE_PATTERN = Regex("\\s+")

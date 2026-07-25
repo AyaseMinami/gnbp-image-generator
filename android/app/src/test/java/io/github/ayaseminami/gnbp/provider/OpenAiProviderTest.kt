@@ -193,6 +193,52 @@ class OpenAiProviderTest {
     }
 
     @Test
+    fun `OpenAI-compatible HTTP diagnostic redacts a prompt containing a URL`() = runTest {
+        val prompt = "a photo of https://example.com/logo.png in the style of Van Gogh"
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    (
+                        "{\"error\":{\"message\":\"Your prompt was rejected: " +
+                            "$prompt -- please revise.\"}}"
+                    ).encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request().copy(prompt = prompt))
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals(
+            "Your prompt was rejected: [REDACTED] -- please revise.",
+            error.providerMessage,
+        )
+    }
+
+    @Test
+    fun `OpenAI-compatible HTTP diagnostic neutralizes Unicode formatting characters`() = runTest {
+        val provider = OpenAiProvider(
+            OpenAiRecordingTransport(
+                ProviderHttpResult.Response(
+                    400,
+                    "{\"error\":{\"message\":\"safe\u202Eevil\u2028next\u00A0word\u200Bhidden\"}}"
+                        .encodeToByteArray(),
+                ),
+            ),
+            strictBinding(),
+            ApiKey("key"),
+        )
+
+        val result = provider.generate(request())
+
+        val error = (result as ImageGenerationResult.Failure).error as ProviderError.HttpStatus
+        assertEquals("safe evil next word hidden", error.providerMessage)
+    }
+
+    @Test
     fun `OpenAI-compatible HTTP error never exposes an unstructured response body`() = runTest {
         val provider = OpenAiProvider(
             OpenAiRecordingTransport(
