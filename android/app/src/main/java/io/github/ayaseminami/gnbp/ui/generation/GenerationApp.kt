@@ -144,6 +144,8 @@ fun GenerationApp(
     onShareResult: (GeneratedAssetReference) -> Unit,
     onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
+    onCopyPrompt: (String) -> Unit,
+    onReusePrompt: (String) -> Unit,
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveResultsFromLibrary: (Set<GeneratedResultId>) -> Unit,
     onDeleteResultsFromDevice: (Set<GeneratedResultId>) -> Unit,
@@ -255,6 +257,11 @@ fun GenerationApp(
                         onShareResults = onShareResults,
                         onReuseResult = { asset ->
                             onReuseResult(asset)
+                            selectedSectionName = AppSection.Generate.name
+                        },
+                        onCopyPrompt = onCopyPrompt,
+                        onReusePrompt = { prompt ->
+                            onReusePrompt(prompt)
                             selectedSectionName = AppSection.Generate.name
                         },
                         onSetFavorite = onSetResultFavorite,
@@ -1041,6 +1048,7 @@ private fun feedbackText(feedback: GenerationFeedback): String = when (feedback)
     GenerationFeedback.TaskNotAvailable -> stringResource(R.string.feedback_task_unavailable)
     GenerationFeedback.PermissionDenied -> stringResource(R.string.feedback_permission_denied)
     GenerationFeedback.ResultUnavailable -> stringResource(R.string.feedback_result_unavailable)
+    GenerationFeedback.PromptCopied -> stringResource(R.string.feedback_prompt_copied)
 }
 
 @Composable

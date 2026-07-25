@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GridView
@@ -93,6 +97,7 @@ internal const val GALLERY_LAYOUT_LIST_TEST_TAG = "gallery-layout-list"
 internal const val GALLERY_LARGE_GRID_TEST_TAG = "gallery-large-grid"
 internal const val GALLERY_COMPACT_GRID_TEST_TAG = "gallery-compact-grid"
 internal const val GALLERY_LIST_TEST_TAG = "gallery-list"
+internal const val GALLERY_PROMPT_DETAILS_TEST_TAG = "gallery-prompt-details"
 
 private const val LARGE_THUMBNAIL_MAX_DIMENSION = 512
 private const val COMPACT_THUMBNAIL_MAX_DIMENSION = 256
@@ -150,6 +155,8 @@ fun GalleryScreen(
     onShareResult: (GeneratedAssetReference) -> Unit,
     onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
+    onCopyPrompt: (String) -> Unit,
+    onReusePrompt: (String) -> Unit,
     onSetFavorite: (GeneratedResultId, Boolean) -> Unit,
     onRemoveFromLibrary: (Set<GeneratedResultId>) -> Unit,
     onDeleteFromDevice: (Set<GeneratedResultId>) -> Unit,
@@ -158,6 +165,7 @@ fun GalleryScreen(
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedResultIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var pendingConfirmation by rememberSaveable { mutableStateOf<String?>(null) }
+    var promptDetailsResultId by rememberSaveable { mutableStateOf<String?>(null) }
     val visibleResults = if (favoritesOnly) results.filter(GeneratedResult::isFavorite) else results
     val visibleIds = visibleResults.map { result -> result.id.value }
     val selectedIds = selectedResultIds.toSet()
@@ -216,6 +224,7 @@ fun GalleryScreen(
                 onOpenResult = onOpenResult,
                 onShareResult = onShareResult,
                 onReuseResult = onReuseResult,
+                onShowPromptDetails = { result -> promptDetailsResultId = result.id.value },
                 onSetFavorite = onSetFavorite,
             )
         }
@@ -267,6 +276,19 @@ fun GalleryScreen(
             },
         )
     }
+    promptDetailsResultId
+        ?.let { resultId -> results.firstOrNull { result -> result.id.value == resultId } }
+        ?.let { result ->
+            ResultPromptDetailsDialog(
+                prompt = result.request.prompt.takeUnless(String::isBlank),
+                onDismiss = { promptDetailsResultId = null },
+                onCopyPrompt = onCopyPrompt,
+                onReusePrompt = { prompt ->
+                    promptDetailsResultId = null
+                    onReusePrompt(prompt)
+                },
+            )
+        }
 }
 
 @Composable
@@ -457,6 +479,7 @@ private fun GalleryResults(
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
+    onShowPromptDetails: (GeneratedResult) -> Unit,
     onSetFavorite: (GeneratedResultId, Boolean) -> Unit,
 ) {
     val contentPadding = PaddingValues(12.dp)
@@ -477,6 +500,7 @@ private fun GalleryResults(
                     onOpen = { onOpenResult(result.asset) },
                     onShare = { onShareResult(result.asset) },
                     onReuse = { onReuseResult(result.asset) },
+                    onShowPromptDetails = { onShowPromptDetails(result) },
                     onSetFavorite = { favorite -> onSetFavorite(result.id, favorite) },
                 )
             }
@@ -497,6 +521,7 @@ private fun GalleryResults(
                     onOpen = { onOpenResult(result.asset) },
                     onShare = { onShareResult(result.asset) },
                     onReuse = { onReuseResult(result.asset) },
+                    onShowPromptDetails = { onShowPromptDetails(result) },
                     onSetFavorite = { favorite -> onSetFavorite(result.id, favorite) },
                 )
             }
@@ -515,6 +540,7 @@ private fun GalleryResults(
                     onOpen = { onOpenResult(result.asset) },
                     onShare = { onShareResult(result.asset) },
                     onReuse = { onReuseResult(result.asset) },
+                    onShowPromptDetails = { onShowPromptDetails(result) },
                     onSetFavorite = { favorite -> onSetFavorite(result.id, favorite) },
                 )
             }
@@ -531,6 +557,7 @@ private fun LargeGalleryItem(
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onReuse: () -> Unit,
+    onShowPromptDetails: () -> Unit,
     onSetFavorite: (Boolean) -> Unit,
 ) {
     Card(
@@ -557,14 +584,8 @@ private fun LargeGalleryItem(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     GalleryFavoriteButton(result, selectionMode, onSetFavorite)
-                    IconButton(onClick = onReuse, enabled = !selectionMode) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.reuse_as_reference))
-                    }
-                    IconButton(onClick = onShare, enabled = !selectionMode) {
-                        Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share_result))
-                    }
-                    IconButton(onClick = onOpen, enabled = !selectionMode) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_result))
+                    if (!selectionMode) {
+                        GalleryItemActionsMenu(onOpen, onShare, onReuse, onShowPromptDetails)
                     }
                 }
             }
@@ -581,6 +602,7 @@ private fun CompactGalleryItem(
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onReuse: () -> Unit,
+    onShowPromptDetails: () -> Unit,
     onSetFavorite: (Boolean) -> Unit,
 ) {
     Card(
@@ -607,7 +629,7 @@ private fun CompactGalleryItem(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     GalleryFavoriteButton(result, false, onSetFavorite)
-                    GalleryItemActionsMenu(onOpen, onShare, onReuse)
+                    GalleryItemActionsMenu(onOpen, onShare, onReuse, onShowPromptDetails)
                 }
             } else {
                 Spacer(Modifier.height(6.dp))
@@ -625,6 +647,7 @@ private fun ListGalleryItem(
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onReuse: () -> Unit,
+    onShowPromptDetails: () -> Unit,
     onSetFavorite: (Boolean) -> Unit,
 ) {
     Card(
@@ -664,7 +687,7 @@ private fun ListGalleryItem(
             if (!selectionMode) {
                 Column {
                     GalleryFavoriteButton(result, false, onSetFavorite)
-                    GalleryItemActionsMenu(onOpen, onShare, onReuse)
+                    GalleryItemActionsMenu(onOpen, onShare, onReuse, onShowPromptDetails)
                 }
             }
         }
@@ -746,6 +769,7 @@ private fun GalleryItemActionsMenu(
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onReuse: () -> Unit,
+    onShowPromptDetails: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
@@ -753,6 +777,14 @@ private fun GalleryItemActionsMenu(
             Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_result_actions))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.view_prompt_details)) },
+                onClick = {
+                    expanded = false
+                    onShowPromptDetails()
+                },
+                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+            )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.open_result)) },
                 onClick = {
@@ -779,6 +811,59 @@ private fun GalleryItemActionsMenu(
             )
         }
     }
+}
+
+@Composable
+private fun ResultPromptDetailsDialog(
+    prompt: String?,
+    onDismiss: () -> Unit,
+    onCopyPrompt: (String) -> Unit,
+    onReusePrompt: (String) -> Unit,
+) {
+    var copied by rememberSaveable(prompt) { mutableStateOf(false) }
+    AlertDialog(
+        modifier = Modifier.testTag(GALLERY_PROMPT_DETAILS_TEST_TAG),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.result_prompt_details_title)) },
+        text = {
+            if (prompt == null) {
+                Text(stringResource(R.string.result_prompt_unavailable))
+            } else {
+                SelectionContainer {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text(text = prompt)
+                        if (copied) {
+                            Text(
+                                text = stringResource(R.string.prompt_copied),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.dismiss_dialog))
+                }
+                if (prompt != null) {
+                    TextButton(
+                        onClick = {
+                            onCopyPrompt(prompt)
+                            copied = true
+                        },
+                    ) {
+                        Text(stringResource(R.string.copy_prompt))
+                    }
+                    TextButton(onClick = { onReusePrompt(prompt) }) {
+                        Text(stringResource(R.string.reuse_prompt_in_generate))
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable

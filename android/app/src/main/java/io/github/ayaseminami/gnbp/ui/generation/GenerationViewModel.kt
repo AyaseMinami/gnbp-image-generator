@@ -85,6 +85,8 @@ sealed interface GenerationFeedback {
     data object PermissionDenied : GenerationFeedback
 
     data object ResultUnavailable : GenerationFeedback
+
+    data object PromptCopied : GenerationFeedback
 }
 
 @SuppressLint("InlinedApi")
@@ -203,11 +205,17 @@ class GenerationViewModel(
         mutableUiState.update { it.copy(selectedProfileId = id, feedback = null) }
     }
 
-    fun updatePrompt(value: String) {
+    fun updatePrompt(value: String) = updatePrompt(value, preserveCopiedFeedback = false)
+
+    fun reusePrompt(value: String) = updatePrompt(value, preserveCopiedFeedback = true)
+
+    private fun updatePrompt(value: String, preserveCopiedFeedback: Boolean) {
         val shouldClearPersistedPreset = mutableUiState.value.selectedPromptId != null ||
             currentSettings.selectedPromptId != null
+        val feedback = mutableUiState.value.feedback
+            ?.takeIf { preserveCopiedFeedback && it == GenerationFeedback.PromptCopied }
         promptEdited = true
-        mutableUiState.update { it.copy(prompt = value, selectedPromptId = null, feedback = null) }
+        mutableUiState.update { it.copy(prompt = value, selectedPromptId = null, feedback = feedback) }
         if (shouldClearPersistedPreset) {
             currentSettings = currentSettings.copy(selectedPromptId = null)
             persistSettingsBestEffort(currentSettings)
@@ -484,6 +492,10 @@ class GenerationViewModel(
 
     fun resultUnavailable() {
         mutableUiState.update { it.copy(feedback = GenerationFeedback.ResultUnavailable) }
+    }
+
+    fun promptCopied() {
+        mutableUiState.update { it.copy(feedback = GenerationFeedback.PromptCopied) }
     }
 
     fun setGeneratedResultFavorite(id: GeneratedResultId, favorite: Boolean) {

@@ -55,6 +55,12 @@
     <string name="gallery_empty">Completed images will appear here</string>
     <string name="gallery_thumbnail">Generated result thumbnail</string>
     <string name="gallery_thumbnail_unavailable">Thumbnail unavailable</string>
+    <string name="view_prompt_details">View prompt details</string>
+    <string name="result_prompt_details_title">Result prompt</string>
+    <string name="result_prompt_unavailable">This result has no available prompt.</string>
+    <string name="copy_prompt">Copy prompt</string>
+    <string name="prompt_copied">Prompt copied</string>
+    <string name="reuse_prompt_in_generate">Use in Generate</string>
     <string name="gallery_favorites_only">Favorites only</string>
     <string name="gallery_layout_large_grid">Large grid</string>
     <string name="gallery_layout_compact_grid">Compact grid</string>
@@ -118,6 +124,7 @@
     <string name="feedback_task_unavailable">This task is not currently actionable</string>
     <string name="feedback_permission_denied">Permission is required to save results or access a local relay</string>
     <string name="feedback_result_unavailable">The result could not be opened or shared and may have been removed from the system gallery</string>
+    <string name="feedback_prompt_copied">Prompt copied</string>
     <string name="generation_unsafe_profile_warning">This profile does not verify server identity or uses cleartext transport. API keys and image content may be intercepted.</string>
     <string name="settings_profiles_title">API profiles</string>
     <string name="settings_profiles_empty">No API profiles yet. Add one to start generating.</string>
