@@ -24,6 +24,10 @@ class RoomGeneratedResultRepository internal constructor(
     override suspend fun setFavorite(id: GeneratedResultId, favorite: Boolean): Boolean =
         resultDao.updateFavorite(id.value, favorite) == 1
 
+    override suspend fun removeResults(ids: Set<GeneratedResultId>): Set<GeneratedResultId> =
+        resultDao.deleteExistingByIds(ids.map(GeneratedResultId::value))
+            .mapTo(mutableSetOf()) { entity -> GeneratedResultId(entity.id) }
+
     private fun decodeOrNull(entity: GeneratedResultEntity): GeneratedResult? =
         runCatching { entity.toDomain() }.getOrNull()
 

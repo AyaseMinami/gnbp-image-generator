@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import io.github.ayaseminami.gnbp.media.AssetReadResult
 import io.github.ayaseminami.gnbp.media.AssetRef
+import io.github.ayaseminami.gnbp.media.AssetAccessResult
+import io.github.ayaseminami.gnbp.media.AssetDeleteResult
 import io.github.ayaseminami.gnbp.media.AssetSaveResult
 import io.github.ayaseminami.gnbp.media.GeneratedAssetMetadata
 import io.github.ayaseminami.gnbp.media.GeneratedAssetStore
@@ -1278,7 +1280,9 @@ private class RecordingAssetStore : GeneratedAssetStore {
 
     override suspend fun read(asset: AssetRef): AssetReadResult = error("Not used")
 
-    override suspend fun delete(asset: AssetRef): Boolean = error("Not used")
+    override suspend fun checkReadable(asset: AssetRef): AssetAccessResult = error("Not used")
+
+    override suspend fun delete(asset: AssetRef): AssetDeleteResult = error("Not used")
 }
 
 private class ThrowingAssetStore : GeneratedAssetStore {
@@ -1289,7 +1293,9 @@ private class ThrowingAssetStore : GeneratedAssetStore {
 
     override suspend fun read(asset: AssetRef): AssetReadResult = error("Not used")
 
-    override suspend fun delete(asset: AssetRef): Boolean = error("Not used")
+    override suspend fun checkReadable(asset: AssetRef): AssetAccessResult = error("Not used")
+
+    override suspend fun delete(asset: AssetRef): AssetDeleteResult = error("Not used")
 }
 
 private class InMemoryTaskRepository(

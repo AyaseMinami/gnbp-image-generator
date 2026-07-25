@@ -137,12 +137,58 @@ class RoomGeneratedResultRepositoryTest {
         }
     }
 
+    @Test
+    fun `removing results reports only existing rows and preserves source tasks`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, GnbpDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val tasks = RoomGenerationTaskRepository(database.taskDao())
+            val results = RoomGeneratedResultRepository(database.generatedResultDao())
+            val first = successfulTask()
+            val second = successfulTask().copy(
+                id = TaskId("task-two"),
+                status = TaskStatus.Succeeded(
+                    GeneratedAssetReference(
+                        id = "generated-two",
+                        location = "content://gnbp/generated-two",
+                        displayName = "generated-two.png",
+                        mimeType = "image/png",
+                        byteSize = 4,
+                    ),
+                ),
+            )
+            tasks.insertTasks(
+                listOf(
+                    first.copy(status = TaskStatus.Running),
+                    second.copy(status = TaskStatus.Running),
+                ),
+            )
+            tasks.commitSucceededTask(first)
+            tasks.commitSucceededTask(second)
+
+            val removed = results.removeResults(
+                setOf(first.id.resultId(), GeneratedResultId("missing-result")),
+            )
+
+            assertEquals(setOf(first.id.resultId()), removed)
+            assertEquals(listOf(second.id.resultId()), results.loadResults().map(GeneratedResult::id))
+            assertEquals(first, tasks.findTask(first.id))
+            assertEquals(second, tasks.findTask(second.id))
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openDatabase(context: Context, name: String): GnbpDatabase =
         Room.databaseBuilder(context, GnbpDatabase::class.java, name)
             .addMigrations(*GnbpDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 }
+
+private fun TaskId.resultId(): GeneratedResultId = GeneratedResultId.forTask(this)
 
 private fun successfulTask() = GenerationTask(
     id = TaskId("task-one"),

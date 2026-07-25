@@ -156,6 +156,20 @@ internal interface GeneratedResultDao {
 
     @Query("UPDATE generated_results SET is_favorite = :favorite WHERE id = :id")
     suspend fun updateFavorite(id: String, favorite: Boolean): Int
+
+    @Query("SELECT * FROM generated_results WHERE id IN (:ids)")
+    suspend fun findByIds(ids: List<String>): List<GeneratedResultEntity>
+
+    @Query("DELETE FROM generated_results WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>): Int
+
+    @Transaction
+    suspend fun deleteExistingByIds(ids: List<String>): List<GeneratedResultEntity> {
+        if (ids.isEmpty()) return emptyList()
+        val existing = findByIds(ids)
+        if (existing.isNotEmpty()) deleteByIds(existing.map(GeneratedResultEntity::id))
+        return existing
+    }
 }
 
 internal sealed interface DirectReplacementEntityCommit {

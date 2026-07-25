@@ -47,6 +47,8 @@ import io.github.ayaseminami.gnbp.ui.settings.SettingsCoordinator
 import io.github.ayaseminami.gnbp.ui.settings.SettingsUiState
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionEvent
 import io.github.ayaseminami.gnbp.ui.notification.TaskCompletionTracker
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementCoordinator
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementState
 
 data class GenerationUiState(
     val profiles: List<ProfileSummary> = emptyList(),
@@ -105,6 +107,9 @@ class GenerationViewModel(
     private val mutablePreviewEvents = MutableSharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>(
         extraBufferCapacity = 1,
     )
+    private val mutableGalleryShareEvents = MutableSharedFlow<List<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>>(
+        extraBufferCapacity = 1,
+    )
     private val completionTracker = TaskCompletionTracker()
     private val settingsCoordinator = SettingsCoordinator(
         profiles = persistence.profiles,
@@ -121,14 +126,25 @@ class GenerationViewModel(
         },
         cleanupReleasedReferences = applicationGraph::cleanupReleasedReferences,
     )
+    private val galleryManagementCoordinator = GalleryManagementCoordinator(
+        scope = viewModelScope,
+        findResult = persistence.generatedResults::findResult,
+        removeResults = persistence.generatedResults::removeResults,
+        checkAsset = applicationGraph.generatedAssetStore::checkReadable,
+        deleteAsset = applicationGraph.generatedAssetStore::delete,
+        shareReady = mutableGalleryShareEvents::emit,
+    )
 
     val uiState: StateFlow<GenerationUiState> = mutableUiState.asStateFlow()
     val tasks: StateFlow<List<GenerationTask>> = mutableTasks.asStateFlow()
     val generatedResults: StateFlow<List<GeneratedResult>> = mutableGeneratedResults.asStateFlow()
     val settingsState: StateFlow<SettingsUiState> = settingsCoordinator.state
     val taskManagementState: StateFlow<TaskManagementState> = taskManagementCoordinator.state
+    val galleryManagementState: StateFlow<GalleryManagementState> = galleryManagementCoordinator.state
     val previewEvents: SharedFlow<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference> =
         mutablePreviewEvents.asSharedFlow()
+    val galleryShareEvents: SharedFlow<List<io.github.ayaseminami.gnbp.generation.GeneratedAssetReference>> =
+        mutableGalleryShareEvents.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -385,6 +401,17 @@ class GenerationViewModel(
     ) = taskManagementCoordinator.deleteTasks(taskIds, retainedDraftAssetIds)
 
     fun clearTaskManagementFeedback() = taskManagementCoordinator.clearFeedback()
+
+    fun removeGeneratedResultsFromLibrary(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.removeFromLibrary(ids)
+
+    fun shareGeneratedResults(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.shareResults(ids)
+
+    fun deleteGeneratedResultsFromDevice(ids: Set<GeneratedResultId>) =
+        galleryManagementCoordinator.deleteFromDevice(ids)
+
+    fun clearGalleryManagementFeedback() = galleryManagementCoordinator.clearFeedback()
 
     fun retry(taskId: TaskId) {
         viewModelScope.launch {

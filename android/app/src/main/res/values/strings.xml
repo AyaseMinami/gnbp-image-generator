@@ -61,6 +61,29 @@
     <string name="share_result">分享结果</string>
     <string name="share_chooser_title">分享生成结果</string>
     <string name="reuse_as_reference">作为参考图复用</string>
+    <string name="select_results">选择结果</string>
+    <string name="exit_gallery_selection">退出选择</string>
+    <string name="select_all_results">全选当前结果</string>
+    <string name="clear_result_selection">取消全选</string>
+    <string name="share_selected_results">分享所选结果</string>
+    <string name="more_result_actions">更多结果操作</string>
+    <string name="remove_selected_from_library">从结果库移除</string>
+    <string name="delete_selected_from_device">从设备删除</string>
+    <string name="confirm_remove_results_title">从结果库移除？</string>
+    <string name="confirm_remove_results_message">将移除 %1$d 条结果记录。系统图库中的图片会保留，任务历史不会改变。</string>
+    <string name="confirm_remove_results">移出结果库</string>
+    <string name="confirm_delete_results_device_title">从设备删除图片？</string>
+    <string name="confirm_delete_results_device_message">将从系统图库删除 %1$d 张应用生成的图片并移除对应结果记录。任务历史不会删除。</string>
+    <string name="confirm_delete_results_device">从设备删除</string>
+    <string name="gallery_remove_feedback">已从结果库移除 %1$d 条；失败 %2$d 条</string>
+    <string name="gallery_share_feedback">已准备分享 %1$d 张；不可用 %2$d 张</string>
+    <string name="gallery_device_delete_feedback">已从设备删除 %1$d 张；失败 %2$d 张</string>
+    <plurals name="selected_result_count">
+        <item quantity="other">已选择 %d 条</item>
+    </plurals>
+    <plurals name="selected_favorite_count">
+        <item quantity="other">其中 %d 条已收藏，确认后仍会执行此操作。</item>
+    </plurals>
     <string name="task_created_at">创建于 %1$s</string>
     <string name="task_unknown_warning">请求可能已经送达服务商。重试可能再次计费。</string>
     <string name="task_error_provider_unavailable">无法读取原 API 配置。请检查设置后显式重试。</string>

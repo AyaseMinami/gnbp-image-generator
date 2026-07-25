@@ -86,6 +86,9 @@ import io.github.ayaseminami.gnbp.persistence.result.GeneratedResultId
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.theme.GnbpTheme
 import io.github.ayaseminami.gnbp.ui.gallery.GalleryScreen
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryBulkAction
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementFeedback
+import io.github.ayaseminami.gnbp.ui.gallery.GalleryManagementState
 import io.github.ayaseminami.gnbp.ui.settings.SettingsActions
 import io.github.ayaseminami.gnbp.ui.settings.SettingsFailure
 import io.github.ayaseminami.gnbp.ui.settings.SettingsFeedback
@@ -115,6 +118,7 @@ fun GenerationApp(
     state: GenerationUiState,
     settingsState: SettingsUiState,
     taskManagementState: TaskManagementState,
+    galleryManagementState: GalleryManagementState,
     settingsActions: SettingsActions,
     tasks: List<GenerationTask>,
     generatedResults: List<GeneratedResult>,
@@ -137,11 +141,15 @@ fun GenerationApp(
     onRetryTask: (TaskId) -> Unit,
     onOpenResult: (GeneratedAssetReference) -> Unit,
     onShareResult: (GeneratedAssetReference) -> Unit,
+    onShareResults: (Set<GeneratedResultId>) -> Unit,
     onReuseResult: (GeneratedAssetReference) -> Unit,
     onSetResultFavorite: (GeneratedResultId, Boolean) -> Unit,
+    onRemoveResultsFromLibrary: (Set<GeneratedResultId>) -> Unit,
+    onDeleteResultsFromDevice: (Set<GeneratedResultId>) -> Unit,
     onFeedbackShown: () -> Unit,
     onSettingsFeedbackShown: () -> Unit,
     onTaskManagementFeedbackShown: () -> Unit,
+    onGalleryManagementFeedbackShown: () -> Unit,
 ) {
     var selectedSectionName by rememberSaveable { mutableStateOf(AppSection.Generate.name) }
     val selectedSection = AppSection.valueOf(selectedSectionName)
@@ -149,10 +157,14 @@ fun GenerationApp(
     val generationFeedbackMessage = state.feedback?.let { feedbackText(it) }
     val settingsFeedbackMessage = settingsState.feedback?.let { settingsFeedbackText(it) }
     val taskManagementFeedbackMessage = taskManagementState.feedback?.let { taskManagementFeedbackText(it) }
+    val galleryManagementFeedbackMessage = galleryManagementState.feedback?.let {
+        galleryManagementFeedbackText(it)
+    }
     LaunchedEffect(
         generationFeedbackMessage,
         settingsFeedbackMessage,
         taskManagementFeedbackMessage,
+        galleryManagementFeedbackMessage,
     ) {
         when {
             generationFeedbackMessage != null -> {
@@ -166,6 +178,10 @@ fun GenerationApp(
             taskManagementFeedbackMessage != null -> {
                 snackbarHostState.showSnackbar(taskManagementFeedbackMessage)
                 onTaskManagementFeedbackShown()
+            }
+            galleryManagementFeedbackMessage != null -> {
+                snackbarHostState.showSnackbar(galleryManagementFeedbackMessage)
+                onGalleryManagementFeedbackShown()
             }
         }
     }
@@ -229,13 +245,17 @@ fun GenerationApp(
                     )
                     AppSection.Gallery -> GalleryScreen(
                         results = generatedResults,
+                        isWorking = galleryManagementState.isWorking,
                         onOpenResult = onOpenResult,
                         onShareResult = onShareResult,
+                        onShareResults = onShareResults,
                         onReuseResult = { asset ->
                             onReuseResult(asset)
                             selectedSectionName = AppSection.Generate.name
                         },
                         onSetFavorite = onSetResultFavorite,
+                        onRemoveFromLibrary = onRemoveResultsFromLibrary,
+                        onDeleteFromDevice = onDeleteResultsFromDevice,
                     )
                     AppSection.Settings -> SettingsScreen(
                         state = settingsState,
@@ -1028,6 +1048,19 @@ private fun taskManagementFeedbackText(feedback: TaskManagementFeedback): String
         feedback.cleanupFailedCount,
     )
     TaskManagementFeedback.DeletionFailed -> stringResource(R.string.task_deletion_failed)
+}
+
+@Composable
+private fun galleryManagementFeedbackText(feedback: GalleryManagementFeedback): String = when (feedback) {
+    is GalleryManagementFeedback.Completed -> stringResource(
+        when (feedback.action) {
+            GalleryBulkAction.Share -> R.string.gallery_share_feedback
+            GalleryBulkAction.RemoveFromLibrary -> R.string.gallery_remove_feedback
+            GalleryBulkAction.DeleteFromDevice -> R.string.gallery_device_delete_feedback
+        },
+        feedback.completedCount,
+        feedback.failedCount,
+    )
 }
 
 @Composable
