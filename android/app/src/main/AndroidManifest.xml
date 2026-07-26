@@ -21,6 +21,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GNBP"
         android:usesCleartextTraffic="true">
+        <meta-data
+            android:name="io.github.ayaseminami.gnbp.RELEASE_SOURCE_COMMIT"
+            android:value="${gnbpReleaseSourceCommit}" />
+
         <service
             android:name=".background.GenerationForegroundService"
             android:exported="false"

@@ -1,6 +1,6 @@
 # Android Sideload Release Guide
 
-Status: M8 release-candidate implementation in progress; signed-candidate evidence remains pending
+Status: M9 feature slices complete; signed-candidate evidence remains pending
 
 This guide covers the signed APK workflow for the first side-loaded Android
 edition. It does not authorize a release by itself. The M7 reliability
@@ -40,7 +40,9 @@ release commit.
 
    `verifyReleaseBuild` runs `check`, `lintRelease`, assembles the unsigned
    Release APK, and checks both its ZIP 16 KB alignment and every arm64 ELF
-   `LOAD.p_align`. It does not sign anything and it never reads a keystore.
+   `LOAD.p_align`. It also rejects a missing or dirty Git source tree and checks
+   that the unsigned APK embeds the full clean source commit in its manifest.
+   It does not sign anything and it never reads a keystore.
 3. Confirm the blocking device matrix is green on API 26, 29, 33, and 36.
    API 37 16 KB remains a non-blocking hosted-CI signal, but a successful
    Firebase Test Lab or physical 16 KB device run is mandatory before any tag or
@@ -70,7 +72,8 @@ from `android/` against that exact signed APK:
 ```powershell
 .\gradlew.bat verifyReleaseCandidate `
   --project-prop gnbp.releaseCandidateApk="C:\path\to\app-release.apk" `
-  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>"
+  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>" `
+  --project-prop gnbp.releaseSourceCommit="<40-character-source-commit>"
 Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 ```
 
@@ -81,11 +84,13 @@ the supplied APK and compare its public certificate digest, runs
 rejecting any `LOAD.p_align < 0x4000`. The APK path may be absolute or relative
 to `android/`; the certificate digest must contain exactly 64 hexadecimal
 digits, with optional colons or spaces. These Gradle properties accept only the
-APK path and public digest. No keystore path, alias, password, or signing
-configuration is accepted by the task. The validator also uses `aapt2 dump
-badging` to require the application ID
+APK path, public digest, and expected 40-character source commit. No keystore
+path, alias, password, or signing configuration is accepted by the task. The
+validator also uses `aapt2` to require the application ID
 `io.github.ayaseminami.gnbp`, `versionCode = 1`, `versionName = 0.1.0`, and a
-non-debuggable manifest, so a Debug APK cannot pass as the release candidate.
+non-debuggable manifest whose embedded source commit exactly matches the
+expected RC2 commit, so a Debug or stale APK cannot pass as the release
+candidate.
 
 Run candidate validation in a separate Gradle invocation. Do not combine it
 with `verifyReleaseBuild`, `assembleRelease`, `packageRelease`, or another
