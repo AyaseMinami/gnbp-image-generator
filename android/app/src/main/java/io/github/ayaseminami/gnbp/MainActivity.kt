@@ -1,20 +1,28 @@
 package io.github.ayaseminami.gnbp
 
 import android.Manifest
-import android.os.Bundle
-import android.os.Build
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.os.Build
+import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.core.net.toUri
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -25,17 +33,14 @@ import io.github.ayaseminami.gnbp.media.ReferenceImagePicker
 import io.github.ayaseminami.gnbp.media.previewIntent
 import io.github.ayaseminami.gnbp.media.shareIntent
 import io.github.ayaseminami.gnbp.media.toAssetRef
-import android.content.Intent
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
+import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.ui.about.AboutPageLauncher
 import io.github.ayaseminami.gnbp.ui.generation.GenerationApp
 import io.github.ayaseminami.gnbp.ui.generation.GenerationPermission
 import io.github.ayaseminami.gnbp.ui.generation.GenerationViewModel
-import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.ui.settings.CertificateDocumentPicker
 import io.github.ayaseminami.gnbp.ui.settings.SettingsActions
+import io.github.ayaseminami.gnbp.ui.theme.resolveDarkTheme
 import kotlinx.coroutines.launch
 
 internal const val GENERATION_PERMISSION_REQUEST_KEY = "gnbp.generation.permission"
@@ -84,6 +89,10 @@ class MainActivity : ComponentActivity() {
             val tasks by generation.tasks.collectAsState()
             val generatedResults by generation.generatedResults.collectAsState()
             val settingsState by generation.settingsState.collectAsState()
+            val darkTheme = settingsState.appSettings.themeMode.resolveDarkTheme(isSystemInDarkTheme())
+            SideEffect {
+                syncEdgeToEdgeTheme(darkTheme)
+            }
             val taskManagementState by generation.taskManagementState.collectAsState()
             val galleryManagementState by generation.galleryManagementState.collectAsState()
             val settingsActions = remember {
@@ -112,6 +121,7 @@ class MainActivity : ComponentActivity() {
                     onUpdateShowPreview = generation::updateShowPreview,
                     onUpdateCompletionNotifications = ::updateCompletionNotifications,
                     onUpdateSoundNotification = generation::updateSoundNotification,
+                    onUpdateThemeMode = generation::updateThemeMode,
                     onOpenAboutDestination = { destination ->
                         if (!aboutPageLauncher.open(destination)) {
                             generation.browserUnavailable()
@@ -248,6 +258,19 @@ class MainActivity : ComponentActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+}
+
+internal fun ComponentActivity.syncEdgeToEdgeTheme(darkTheme: Boolean) {
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.auto(
+            Color.TRANSPARENT,
+            Color.TRANSPARENT,
+        ) { darkTheme },
+        navigationBarStyle = SystemBarStyle.auto(
+            Color.argb(0xe6, 0xff, 0xff, 0xff),
+            Color.argb(0x80, 0x1b, 0x1b, 0x1b),
+        ) { darkTheme },
+    )
 }
 
 internal fun copyPromptToClipboard(context: Context, prompt: String) {

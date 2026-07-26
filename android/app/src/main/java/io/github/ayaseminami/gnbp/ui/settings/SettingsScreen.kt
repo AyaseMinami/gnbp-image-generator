@@ -60,6 +60,7 @@ import io.github.ayaseminami.gnbp.R
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.about.AboutScreen
 
@@ -154,6 +155,16 @@ private fun SettingsHome(
 
         HorizontalDivider()
         Text(
+            text = stringResource(R.string.settings_appearance_title),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        ThemeSetting(
+            value = state.appSettings.themeMode,
+            onValueChange = actions.onUpdateThemeMode,
+        )
+
+        HorizontalDivider()
+        Text(
             text = stringResource(R.string.settings_behavior_title),
             style = MaterialTheme.typography.titleMedium,
         )
@@ -218,6 +229,38 @@ private fun SettingsHome(
             },
             onDismiss = { deletePromptId = null },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeSetting(
+    value: ThemeMode,
+    onValueChange: (ThemeMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.setting_theme), style = MaterialTheme.typography.bodyLarge)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            ThemeMode.entries.forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = value == mode,
+                    onClick = { onValueChange(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
+                ) {
+                    Text(
+                        stringResource(
+                            when (mode) {
+                                ThemeMode.System -> R.string.theme_system
+                                ThemeMode.Light -> R.string.theme_light
+                                ThemeMode.Dark -> R.string.theme_dark
+                            },
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
     }
 }
 

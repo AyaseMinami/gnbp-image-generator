@@ -134,6 +134,11 @@
     <string name="settings_prompts_title">提示词预设</string>
     <string name="settings_prompts_empty">尚无提示词预设。</string>
     <string name="settings_behavior_title">生成与通知</string>
+    <string name="settings_appearance_title">外观</string>
+    <string name="setting_theme">显示模式</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
     <string name="settings_about_title">关于</string>
     <string name="open_about">关于 GNBP</string>
     <string name="navigate_back">返回</string>

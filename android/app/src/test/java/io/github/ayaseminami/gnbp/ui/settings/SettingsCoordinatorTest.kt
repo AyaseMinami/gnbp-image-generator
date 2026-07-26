@@ -11,6 +11,7 @@ import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptRepository
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
 import io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.persistence.settings.SettingsRepository
 import io.github.ayaseminami.gnbp.provider.ApiKey
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
@@ -139,6 +140,26 @@ class SettingsCoordinatorTest {
         runCurrent()
 
         assertEquals(GalleryLayoutMode.CompactGrid, recreated.state.value.appSettings.galleryLayoutMode)
+    }
+
+    @Test
+    fun `theme applies immediately and restores without replacing unrelated settings`() = runTest {
+        val settings = FakeSettingsRepository()
+        val first = coordinator(settings = settings)
+        runCurrent()
+
+        first.updateShowPreview(false)
+        first.updateThemeMode(ThemeMode.Dark)
+        runCurrent()
+
+        assertEquals(ThemeMode.Dark, first.state.value.appSettings.themeMode)
+        assertFalse(first.state.value.appSettings.showPreview)
+
+        val recreated = coordinator(settings = settings)
+        runCurrent()
+
+        assertEquals(ThemeMode.Dark, recreated.state.value.appSettings.themeMode)
+        assertFalse(recreated.state.value.appSettings.showPreview)
     }
 
     @Test

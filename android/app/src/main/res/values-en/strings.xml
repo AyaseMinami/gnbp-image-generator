@@ -137,6 +137,11 @@
     <string name="settings_prompts_title">Prompt presets</string>
     <string name="settings_prompts_empty">No prompt presets yet.</string>
     <string name="settings_behavior_title">Generation and notifications</string>
+    <string name="settings_appearance_title">Appearance</string>
+    <string name="setting_theme">Display mode</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
     <string name="settings_about_title">About</string>
     <string name="open_about">About GNBP</string>
     <string name="navigate_back">Back</string>

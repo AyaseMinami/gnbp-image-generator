@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF245B47),
@@ -25,11 +26,18 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun GnbpTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.System,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = themeMode.resolveDarkTheme(isSystemInDarkTheme())
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         content = content,
     )
+}
+
+internal fun ThemeMode.resolveDarkTheme(systemInDarkTheme: Boolean): Boolean = when (this) {
+    ThemeMode.System -> systemInDarkTheme
+    ThemeMode.Light -> false
+    ThemeMode.Dark -> true
 }

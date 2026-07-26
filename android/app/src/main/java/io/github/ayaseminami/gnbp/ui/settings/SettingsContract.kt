@@ -4,6 +4,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.provider.transport.ProfileId
 import io.github.ayaseminami.gnbp.ui.about.AboutDestination
 
@@ -132,5 +133,6 @@ class SettingsActions(
     val onUpdateShowPreview: (Boolean) -> Unit,
     val onUpdateCompletionNotifications: (Boolean) -> Unit,
     val onUpdateSoundNotification: (Boolean) -> Unit,
+    val onUpdateThemeMode: (ThemeMode) -> Unit,
     val onOpenAboutDestination: (AboutDestination) -> Unit,
 )

@@ -24,6 +24,7 @@ import io.github.ayaseminami.gnbp.persistence.profile.ProfileLoadResult
 import io.github.ayaseminami.gnbp.persistence.profile.ProfileSummary
 import io.github.ayaseminami.gnbp.persistence.profile.ProviderKind
 import io.github.ayaseminami.gnbp.persistence.settings.AppSettings
+import io.github.ayaseminami.gnbp.persistence.settings.ThemeMode
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptId
 import io.github.ayaseminami.gnbp.persistence.prompt.PromptPreset
 import io.github.ayaseminami.gnbp.persistence.result.GeneratedResult
@@ -481,6 +482,7 @@ class GenerationViewModel(
     fun updateCompletionNotifications(value: Boolean) =
         settingsCoordinator.updateCompletionNotifications(value)
     fun updateSoundNotification(value: Boolean) = settingsCoordinator.updateSoundNotification(value)
+    fun updateThemeMode(value: ThemeMode) = settingsCoordinator.updateThemeMode(value)
     fun updateGalleryLayoutMode(value: io.github.ayaseminami.gnbp.persistence.settings.GalleryLayoutMode) =
         settingsCoordinator.updateGalleryLayoutMode(value)
     fun notificationPermissionDenied() = settingsCoordinator.notificationPermissionDenied()
