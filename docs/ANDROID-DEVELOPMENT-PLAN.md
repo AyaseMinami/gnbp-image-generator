@@ -434,9 +434,11 @@ tablet layouts, and other parity additions remain out of scope until a signed
   and every arm64 `LOAD.p_align >= 0x4000`;
 - add `verifyReleaseBuild` and `verifyReleaseCandidate` Gradle entry points:
   the former assembles the unsigned release variant, runs lint and offline
-  tests, and checks ZIP/ELF alignment; the latter validates a caller-supplied
-  exact signed APK's signer, package, version, non-debuggable manifest, and
-  ZIP/ELF alignment without receiving signing paths, aliases, or passwords;
+  tests, rejects a missing or dirty Git source tree, and checks source identity
+  plus ZIP/ELF alignment; the latter validates a caller-supplied exact signed
+  APK's signer, package, version, embedded source commit, non-debuggable
+  manifest, and ZIP/ELF alignment without receiving signing paths, aliases, or
+  passwords;
 - keep release signing material outside the repository and CI; the user owns
   the signing identity and an independently stored recovery backup;
 - make explicit retry idempotent at the engine/persistence boundary, not only in

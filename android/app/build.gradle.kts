@@ -12,6 +12,8 @@ val pinnedBuildToolsVersion = "36.0.0"
 val applicationIdValue = "io.github.ayaseminami.gnbp"
 val releaseVersionCodeValue = 1
 val releaseVersionNameValue = "0.1.0"
+val releaseSourceCommitMetadataName = "$applicationIdValue.RELEASE_SOURCE_COMMIT"
+val releaseSourceProvenance = readGitSourceProvenance(rootProject.projectDir.parentFile)
 
 android {
     namespace = "io.github.ayaseminami.gnbp"
@@ -24,6 +26,7 @@ android {
         targetSdk = 37
         versionCode = releaseVersionCodeValue
         versionName = releaseVersionNameValue
+        manifestPlaceholders["gnbpReleaseSourceCommit"] = "UNVERIFIED"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -31,6 +34,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            manifestPlaceholders["gnbpReleaseSourceCommit"] =
+                releaseSourceProvenance.commit ?: "UNKNOWN"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -146,6 +151,7 @@ val debugApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
 val unsignedReleaseApk = layout.buildDirectory.file("outputs/apk/release/app-release-unsigned.apk")
 val releaseCandidateApkPath = providers.gradleProperty("gnbp.releaseCandidateApk")
 val releaseCertificateSha256 = providers.gradleProperty("gnbp.releaseCertificateSha256")
+val releaseSourceCommit = providers.gradleProperty("gnbp.releaseSourceCommit")
 val releaseCandidateApk = releaseCandidateApkPath.map(rootProject::file)
 val sdkDirectory = androidComponents.sdkComponents.sdkDirectory
 val zipalignExecutable = sdkDirectory.map { directory ->
@@ -171,6 +177,29 @@ val aapt2Executable = sdkDirectory.map { directory ->
         "aapt2"
     }
     directory.file("build-tools/$pinnedBuildToolsVersion/$executable").asFile
+}
+
+val verifyReleaseSourceProvenance by tasks.registering {
+    group = "verification"
+    description = "Rejects release builds that cannot be tied to a clean Git source commit."
+    inputs.property("releaseSourceCommit", releaseSourceProvenance.commit.orEmpty())
+    inputs.property("releaseSourceTreeClean", releaseSourceProvenance.isClean)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val sourceCommit = releaseSourceProvenance.commit
+            ?.normalizeGitCommit()
+            ?: error("Release builds require a Git checkout with a full source commit")
+        check(releaseSourceProvenance.isClean) {
+            "Release builds require a clean Git worktree at source commit $sourceCommit"
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "preReleaseBuild") {
+        dependsOn(verifyReleaseSourceProvenance)
+    }
 }
 
 val verifyDebugApkPageAlignment by tasks.registering(Exec::class) {
@@ -256,6 +285,30 @@ val verifyReleaseArm64ElfPageAlignment by tasks.registering {
 
 verifyReleaseApkPageAlignment.configure {
     dependsOn(verifyReleaseArm64ElfPageAlignment)
+}
+
+val verifyReleaseApkSourceProvenance by tasks.registering {
+    group = "verification"
+    description = "Verifies that the unsigned release APK embeds its clean Git source commit."
+    dependsOn("assembleRelease")
+    inputs.file(unsignedReleaseApk)
+    inputs.property("releaseSourceCommit", releaseSourceProvenance.commit.orEmpty())
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val apkFile = unsignedReleaseApk.get().asFile
+        val expectedSourceCommit = releaseSourceProvenance.commit
+            ?.normalizeGitCommit()
+            ?: error("Release builds require a Git checkout with a full source commit")
+        val embeddedSourceCommit = readApkSourceCommit(
+            apkFile = apkFile,
+            aapt2File = aapt2Executable.get(),
+            metadataName = releaseSourceCommitMetadataName,
+        ) ?: error("The unsigned release APK does not declare $releaseSourceCommitMetadataName")
+        check(embeddedSourceCommit == expectedSourceCommit) {
+            "The unsigned release APK source commit does not match the release source commit"
+        }
+    }
 }
 
 val verifyReleaseCandidateZipAlignment by tasks.registering(Exec::class) {
@@ -345,11 +398,15 @@ val verifyReleaseCandidateManifest by tasks.registering {
     group = "verification"
     description = "Verifies the signed APK package, version, and non-debuggable release manifest."
     inputs.property("releaseCandidateApk", releaseCandidateApkPath.orElse(""))
+    inputs.property("releaseSourceCommit", releaseSourceCommit.orElse(""))
     outputs.upToDateWhen { false }
 
     doLast {
         val apkFile = releaseCandidateApk.orNull
             ?: error("Set -Pgnbp.releaseCandidateApk to the exact signed APK")
+        val expectedSourceCommit = releaseSourceCommit.orNull
+            ?.normalizeGitCommit()
+            ?: error("Set -Pgnbp.releaseSourceCommit to the exact RC2 source commit")
         val aapt2File = aapt2Executable.get()
         check(aapt2File.isFile) { "aapt2 not found at ${aapt2File.absolutePath}" }
         check(apkFile.isFile) { "Signed APK not found at ${apkFile.absolutePath}" }
@@ -378,6 +435,16 @@ val verifyReleaseCandidateManifest by tasks.registering {
         check(output.lineSequence().none { line -> line.trim() == "application-debuggable" }) {
             "The release candidate must not be debuggable"
         }
+
+        val embeddedSourceCommit = readApkSourceCommit(
+            apkFile = apkFile,
+            aapt2File = aapt2File,
+            metadataName = releaseSourceCommitMetadataName,
+        )
+            ?: error("The release candidate does not declare $releaseSourceCommitMetadataName")
+        check(embeddedSourceCommit == expectedSourceCommit) {
+            "The release candidate source commit does not match the expected RC2 commit"
+        }
     }
 }
 
@@ -389,6 +456,7 @@ val verifyReleaseBuild by tasks.registering {
         "lintRelease",
         verifyReleaseApkPageAlignment,
         verifyReleaseArm64ElfPageAlignment,
+        verifyReleaseApkSourceProvenance,
     )
 }
 
@@ -489,6 +557,69 @@ fun String.normalizeSha256Digest(): String {
         "Certificate SHA-256 digest must contain exactly 64 hexadecimal digits"
     }
     return normalized
+}
+
+fun String.normalizeGitCommit(): String {
+    val normalized = trim().lowercase()
+    check(Regex("[0-9a-f]{40}").matches(normalized)) {
+        "Source commit must contain exactly 40 hexadecimal digits"
+    }
+    return normalized
+}
+
+data class GitSourceProvenance(
+    val commit: String?,
+    val isClean: Boolean,
+)
+
+fun readGitSourceProvenance(repositoryDirectory: File): GitSourceProvenance {
+    val repositoryRoot = runGit(repositoryDirectory, "rev-parse", "--show-toplevel")
+        ?.let(::File)
+        ?.takeIf { root ->
+            runCatching { root.canonicalFile == repositoryDirectory.canonicalFile }.getOrDefault(false)
+        }
+        ?: return GitSourceProvenance(commit = null, isClean = false)
+    val commit = runGit(repositoryRoot, "rev-parse", "--verify", "HEAD")
+        ?.takeIf { value -> Regex("[0-9a-fA-F]{40}").matches(value) }
+        ?.lowercase()
+    val status = runGit(repositoryRoot, "status", "--porcelain=v1", "--untracked-files=all")
+    return GitSourceProvenance(
+        commit = commit,
+        isClean = commit != null && status != null && status.isEmpty(),
+    )
+}
+
+fun runGit(repositoryDirectory: File, vararg arguments: String): String? {
+    val process = runCatching {
+        ProcessBuilder(
+            listOf("git", "-C", repositoryDirectory.absolutePath) + arguments,
+        ).redirectErrorStream(true).start()
+    }.getOrNull() ?: return null
+    val output = process.inputStream.bufferedReader().use { reader -> reader.readText() }.trim()
+    return output.takeIf { process.waitFor() == 0 }
+}
+
+fun readApkSourceCommit(
+    apkFile: File,
+    aapt2File: File,
+    metadataName: String,
+): String? {
+    check(aapt2File.isFile) { "aapt2 not found" }
+    check(apkFile.isFile) { "APK not found" }
+    val process = ProcessBuilder(
+        aapt2File.absolutePath,
+        "dump",
+        "xmltree",
+        apkFile.absolutePath,
+        "--file",
+        "AndroidManifest.xml",
+    ).redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().use { reader -> reader.readText() }
+    check(process.waitFor() == 0) { "aapt2 could not read the APK manifest" }
+    return Regex(
+        """E: meta-data.*?name[^\r\n]*=\"${Regex.escape(metadataName)}\"[^\r\n]*[\r\n]+\s+A: [^\r\n]*:value[^\r\n]*=\"([0-9a-fA-F]{40})\"""",
+        setOf(RegexOption.DOT_MATCHES_ALL),
+    ).find(output)?.groupValues?.get(1)?.normalizeGitCommit()
 }
 
 fun ByteArray.elf64LoadAlignments(entryName: String): List<Long> {

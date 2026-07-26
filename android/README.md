@@ -62,13 +62,16 @@ without exposing signing material. Store it in the repository-root ignored
 ```powershell
 .\gradlew.bat verifyReleaseCandidate `
   --project-prop gnbp.releaseCandidateApk="C:\path\to\app-release.apk" `
-  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>"
+  --project-prop gnbp.releaseCertificateSha256="<public-certificate-sha256>" `
+  --project-prop gnbp.releaseSourceCommit="<40-character-source-commit>"
 Get-FileHash "C:\path\to\app-release.apk" -Algorithm SHA256
 ```
 
-The candidate task accepts only the APK path and public certificate digest. It
-does not accept or read a keystore path, alias, password, or signing config. It
-also rejects Debug APKs and candidates with a different package or version.
+Every Release build must run from a clean Git worktree and embeds its full source
+commit in the application manifest. The candidate task accepts only the APK
+path, public certificate digest, and expected source commit. It does not accept
+or read a keystore path, alias, password, or signing config. It also rejects
+Debug APKs and candidates with a different package, version, or source commit.
 It runs only candidate-file checks and never assembles a Release APK. Do not
 combine it with `verifyReleaseBuild`, `assembleRelease`, `packageRelease`, or
 another Release-producing task in the same Gradle invocation; a task-graph
